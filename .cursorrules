@@ -1,0 +1,551 @@
+# .cursorrules - PRD Helper Development Guidelines
+
+## 🎯 Project Overview
+PRD Helper - AI-powered requirements document generator using Next.js, Prisma, tRPC, and Inngest.
+
+---
+
+## 📦 Components & UI
+
+### Component Guidelines
+- **Type**: Use functional components only
+- **Client Components**: Add `"use client"` directive when needed (state, effects, browser APIs)
+- **Naming**: PascalCase (e.g., `DocumentViewer.tsx`, `ProjectCard.tsx`)
+- **Location**: `src/components/` directory
+- **Size**: Keep components small and focused (< 200 lines ideally)
+- **Types**: Always use TypeScript interfaces/types
+- **Props Interface**: Define above component with `interface ComponentNameProps {}`
+
+### UI Framework
+- **Styling**: Use Tailwind CSS exclusively
+- **Components**: Build custom components with Tailwind
+- **❌ DO NOT USE**: Radix UI, shadcn/ui, or any component libraries
+- **Standard Elements**: Use native HTML elements styled with Tailwind
+  - `<button>` instead of `<Button />`
+  - `<textarea>` instead of `<Textarea />`
+  - `<input>` instead of `<Input />`
+
+### Icons
+- **Primary Library**: `lucide-react`
+- **Naming**: PascalCase (e.g., `FileText`, `ChevronRight`, `Settings`)
+- **Custom Icons**: Place in `src/components/icons/` directory
+- **Usage**: `import { IconName } from 'lucide-react'`
+
+### Notifications
+- **Library**: `react-toastify`
+- **Usage**: Client components only
+- **Methods**:
+  - `toast.success('Message')`
+  - `toast.error('Error message')`
+  - `toast.info('Info message')`
+  - `toast.warning('Warning message')`
+- **Setup**: Import `ToastContainer` in layout
+
+---
+
+## 🗄️ Database & Firestore
+
+### Firestore Setup
+- **Client File**: `services/firebase.ts` (already initialized)
+- **Firestore Import**: `import { getFirestore } from 'firebase/firestore'`
+- **Collection Naming**: Use `camelCase` for collection names (e.g., `newsletters`, `userProfiles`)
+- **Document Naming**: Use `camelCase` for field names in documents
+- **Example**:
+  ```typescript
+  import { getFirestore, collection, doc, setDoc, getDoc } from 'firebase/firestore';
+  
+  const db = getFirestore();
+  const newslettersRef = collection(db, 'newsletters');
+  
+  // Document structure
+  interface Newsletter {
+    id: string;
+    title: string;
+    content: string;
+    authorId: string;
+    createdAt: Timestamp;
+    isPublished: boolean;
+  }
+  ```
+
+### Collection Structure
+- **Collections**: Top-level collections (e.g., `newsletters`, `users`)
+- **Subcollections**: Use for nested data (e.g., `newsletters/{id}/comments`)
+- **Document IDs**: Use auto-generated IDs (`doc()` without ID) or custom IDs (`doc(db, 'collection', 'customId')`)
+- **Field Types**: Use Firestore native types (string, number, boolean, Timestamp, GeoPoint, etc.)
+
+### Best Practices
+- **No Prisma**: Firestore is a NoSQL document database; use Firebase SDK directly
+- **Transactions**: Use `runTransaction()` for atomic multi-document operations
+- **Indexes**: Create composite indexes in Firebase Console for complex queries
+- **Queries**: Use `query()`, `where()`, `orderBy()`, `limit()` for efficient data fetching
+- **Real-time Updates**: Use `onSnapshot()` for real-time listeners (clean up with unsubscribe)
+- **Batch Operations**: Use `writeBatch()` for multiple writes in a single operation
+- **Security Rules**: Always define Firestore Security Rules in Firebase Console
+- **Type Safety**: Define TypeScript interfaces for document structures
+
+---
+
+## 🚀 Next.js Architecture
+
+### App Router Structure
+```
+app/
+├── (auth)/
+│   ├── login/
+│   └── signup/
+├── (dashboard)/
+│   ├── dashboard/
+│   └── projects/
+│       └── [id]/
+├── api/
+│   ├── trpc/
+│   └── inngest/
+└── layout.tsx
+```
+
+### Component Types
+- **Server Components**: Default for all components
+- **Client Components**: Mark with `"use client"` when using:
+  - `useState`, `useEffect`, `useContext`
+  - Browser APIs (localStorage, window, etc.)
+  - Event handlers (onClick, onChange, etc.)
+  - `useRouter` from `next/navigation`
+
+### Authentication
+- **Provider**: Firebase Authentication
+- **Methods**: Email/Password, Google OAuth (already configured in `services/firebase.ts`)
+- **Session**: Firebase Auth state (use `onAuthStateChanged` for session management)
+- **Configuration**: `services/firebase.ts`
+- **Protected Routes**: Use Firebase Auth state checks or route guards
+
+### Environment Variables
+- **File**: `.env` (gitignored)
+- **Required Variables**:
+  ```env
+  # Firebase config is in services/firebase.ts (can be moved to .env for security)
+  VITE_FIREBASE_API_KEY=""
+  VITE_FIREBASE_AUTH_DOMAIN=""
+  VITE_FIREBASE_PROJECT_ID=""
+  VITE_FIREBASE_STORAGE_BUCKET=""
+  VITE_FIREBASE_MESSAGING_SENDER_ID=""
+  VITE_FIREBASE_APP_ID=""
+  
+  # Optional: Other services
+  OPENROUTER_API_KEY=""
+  INNGEST_EVENT_KEY=""
+  INNGEST_SIGNING_KEY=""
+  ```
+
+---
+
+## 🔌 tRPC API
+
+### Router Structure
+- **Location**: `src/lib/api/routers/`
+- **Root Router**: `src/lib/api/root.ts`
+- **Example Structure**:
+  ```
+  src/lib/api/
+  ├── routers/
+  │   ├── project.ts
+  │   ├── document.ts
+  │   ├── conversation.ts
+  │   └── admin.ts
+  ├── root.ts
+  └── trpc.ts
+  ```
+
+### Procedure Types
+- **Public**: `publicProcedure` - No authentication required
+- **Protected**: `protectedProcedure` - Requires authentication
+- **Admin**: Create custom `adminProcedure` for admin-only routes
+
+### Input Validation
+- **Library**: Zod (always validate inputs)
+- **Example**:
+  ```typescript
+  createProject: protectedProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(200),
+        initialIdea: z.string().min(20).max(2000),
+        userMode: z.enum(['plain', 'technical']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Implementation
+    })
+  ```
+
+### Client Usage
+- **Import**: `import { api } from '@/lib/trpc/react'`
+- **Query**: `const { data, isLoading } = api.project.getAll.useQuery()`
+- **Mutation**: `const { mutate } = api.project.create.useMutation()`
+
+---
+
+## ⚙️ Background Jobs (Inngest)
+
+### Configuration
+- **Config File**: `inngest.config.ts` (root directory)
+- **API Route**: `src/app/api/inngest/route.ts`
+- **Functions**: `src/inngest/` directory
+
+### Event Pattern
+```typescript
+// Trigger event
+inngest.send({
+  name: 'document/generate',
+  data: {
+    projectId: 'xxx',
+    documentType: 'brd',
+  },
+});
+
+// Handle event (in src/inngest/functions.ts)
+export const generateDocument = inngest.createFunction(
+  { name: 'Generate Document' },
+  { event: 'document/generate' },
+  async ({ event, step }) => {
+    // Implementation
+  }
+);
+```
+
+### UI Updates
+- **❌ WRONG**: Rely on tRPC mutation success
+- **✅ CORRECT**: Use polling to check job status
+- **Pattern**:
+  1. Trigger Inngest event via tRPC
+  2. Return immediately
+  3. Poll status using tRPC query
+  4. Update UI when status changes
+
+---
+
+## 🤖 AI Integration
+
+### Client Setup
+- **File**: `src/lib/aiClient.ts`
+- **Function**: `generateChatCompletion()`
+- **Provider**: OpenRouter API
+
+### Model Selection
+- **Text Generation**: `openai/gpt-4o` (high quality) or `google/gemini-2.5-flash` (fast, cost-effective)
+- **Image Understanding**: `google/gemini-2.5-flash-image`
+- **Recommended Default**: `google/gemini-2.5-flash` for MVP
+
+### Usage Pattern
+```typescript
+const response = await generateChatCompletion({
+  model: 'google/gemini-2.5-flash',
+  messages: [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userInput },
+  ],
+  temperature: 0.7,
+  max_tokens: 2000,
+});
+```
+
+### Best Practices
+- Store system prompts in database (`system_prompts` table)
+- Log all AI requests for debugging
+- Implement retry logic with exponential backoff
+- Use streaming for long responses (future enhancement)
+
+---
+
+## 🎨 Styling & Design
+
+### Tailwind CSS
+- **Approach**: Mobile-first responsive design
+- **Config**: `tailwind.config.ts`
+- **Brand Tokens**: Extend default theme with brand colors
+- **Dark Mode**: Use `dark:` prefix for dark mode styles
+- **Example**:
+  ```tsx
+  <div className="bg-white dark:bg-gray-900 p-4 sm:p-6 lg:p-8">
+    <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold">
+      Title
+    </h2>
+  </div>
+  ```
+
+### Responsive Breakpoints
+- `sm`: 640px
+- `md`: 768px
+- `lg`: 1024px
+- `xl`: 1280px
+- `2xl`: 1536px
+
+### Animation
+- **Library**: Framer Motion (when needed)
+- **Use Cases**: Page transitions, complex animations, gesture handling
+- **Simple Animations**: Use Tailwind's `transition-*` utilities
+
+---
+
+## 📝 TypeScript Guidelines
+
+### Strict Mode
+- **tsconfig.json**: `"strict": true`
+- **No `any`**: Explicitly type everything
+- **Type Imports**: Use `import type` when only importing types
+
+### Type Definitions
+- **Shared Types**: `src/lib/types.ts`
+- **Zod Schemas**: Co-locate with usage, infer types
+  ```typescript
+  const projectSchema = z.object({
+    title: z.string(),
+    userMode: z.enum(['plain', 'technical']),
+  });
+  
+  type Project = z.infer<typeof projectSchema>;
+  ```
+
+### Syntax Preferences
+- **Optional Chaining**: Use `?.` instead of nested ternaries
+- **Nullish Coalescing**: Use `??` instead of `||` for null/undefined checks
+- **Union Types**: Prefer over enums
+  ```typescript
+  type UserMode = 'plain' | 'technical';  // ✅
+  enum UserMode { Plain, Technical }      // ❌
+  ```
+
+---
+
+## 📂 File & Folder Conventions
+
+### Naming Conventions
+- **Routes**: kebab-case (`app/create-project/page.tsx`)
+- **Components**: PascalCase (`DocumentViewer.tsx`)
+- **Utilities**: camelCase (`formatDate.ts`)
+- **Types**: PascalCase (`UserProfile.ts`)
+
+### Import Order
+```typescript
+// 1. External dependencies
+import React from 'react';
+import { useRouter } from 'next/navigation';
+
+// 2. Internal modules
+import { api } from '@/lib/trpc/react';
+import { db } from '@/lib/db';
+
+// 3. Sibling imports
+import { DocumentViewer } from './DocumentViewer';
+
+// 4. Styles (if any CSS modules)
+import styles from './component.module.css';
+```
+
+### File Organization
+```
+src/
+├── app/                    # Next.js app directory
+├── components/             # React components
+│   ├── icons/             # Custom icons
+│   ├── ui/                # Reusable UI components
+│   └── features/          # Feature-specific components
+├── lib/
+│   ├── api/               # tRPC routers
+│   ├── utils/
+│   │   ├── shared.ts      # Client + Server utils
+│   │   └── server.ts      # Server-only utils
+│   ├── types.ts           # Shared TypeScript types
+│   ├── firestore.ts       # Firestore client/helpers
+│   ├── aiClient.ts        # AI integration
+│   └── trpc/              # tRPC client config
+└── inngest/               # Inngest functions
+```
+
+---
+
+## 🛠️ Development Workflow
+
+### Code Quality
+- **Keep It Simple**: Functions < 50 lines, components < 200 lines
+- **DRY Principle**: Extract reusable logic
+- **Shared Utils**: `src/lib/utils/shared.ts` (client + server)
+- **Server Utils**: `src/lib/utils/server.ts` (server only)
+
+### Commit Messages
+- **Format**: Semantic commit messages
+  ```
+  feat: add document approval workflow
+  fix: resolve markdown rendering issue
+  refactor: extract AI prompt logic
+  docs: update README with setup instructions
+  ```
+
+### Migration Scripts
+- **Tool**: `tsx` for TypeScript scripts
+- **Location**: `scripts/` directory
+- **Example**: `scripts/migrate-documents.ts`
+- **Run**: `npx tsx scripts/migrate-documents.ts`
+
+---
+
+## 🧪 Testing Rules
+
+### Testing Stack
+- **Unit**: Vitest + React Testing Library (components, utils, hooks)
+- **Integration**: Vitest for tRPC procedures via `createCaller`, Next.js route handlers, Firestore emulator for test DB
+- **E2E**: Playwright (headless in CI), role-based queries preferred over brittle selectors
+
+### Naming & Layout
+- Test files: `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`
+- Co-locate tests next to source OR under `src/__tests__` (consistent per folder)
+- Snapshots: minimal usage; store under `__snapshots__`, keep stable inputs
+
+### Coverage Targets (CI-enforced)
+- Global: 80% statements, branches, functions, lines
+- Per-file soft floor: 70% (flag in CI reports; do not block initially)
+- Command: `npm run test:coverage`
+
+### Database Tests (Firestore)
+- Use Firebase Emulator Suite for local testing (`firebase emulators:start`)
+- Set up test project or use emulator with separate test data
+- Clean data between tests by deleting test documents/collections
+- Use Firestore emulator for isolated test environment
+- Prefer factories/builders for data setup (e.g., `tests/factories/*`)
+- Mock Firestore operations in unit tests using MSW or Firebase emulator
+
+### Mocking & Isolation
+- Network: use MSW for HTTP mocks in unit/integration
+- AI Provider (OpenRouter): mock client; no live network calls in tests
+- Inngest: mock function triggers/steps; assert events rather than execution
+- Time: use fake timers for time-based logic (auto-save, polling)
+
+### E2E Practices (Playwright)
+- Selectors: prefer `getByRole`, `getByLabel`, or `data-testid` (stable)
+- Auth: seed a test user via API/setup script; do not reuse prod accounts
+- Flakiness: set retries=2 in CI; forbid `test.only` and `test.skip` in CI
+- Artifacts: save traces/videos on failure in CI for debugging
+
+### Commands (expected)
+```bash
+npm run test           # all tests
+npm run test:unit      # unit/integration
+npm run test:e2e       # playwright
+npm run test:coverage  # coverage report
+npm run test:ci        # headless, no watch, with reports
+```
+
+### CI Rules
+- Tests must pass on PRs targeting `main`
+- No network calls to third-party services in CI (use mocks)
+- Parallelize unit/integration and E2E where possible
+- Upload coverage to report artifact; gate on global threshold
+
+### Anti-Patterns (Do Not)
+- Do not assert on implementation details (internal state)
+- Do not rely on artificial sleeps; use proper waits for UI conditions
+- Do not share state across tests; isolate via setup/teardown
+- Do not commit `.only`, sensitive test secrets, or recorded tokens
+
+## ✅ Quality Assurance Checklist
+
+### Before Every Commit
+
+1. **Build Check**
+   ```bash
+   npm run build
+   ```
+   - ✅ Fix all errors
+   - ⚠️ Warnings are acceptable (but address if critical)
+
+2. **Type Check**
+   ```bash
+   npm run type-check
+   ```
+   - Must pass with zero errors
+
+3. **Update Changelog**
+   - Add one-sentence summary to `.cursor-updates` file
+   - Format: `- [DATE] [FEATURE/FIX/REFACTOR]: Description`
+   - Example: `- [2025-10-24] FEAT: Added document marker extraction logic`
+
+4. **Git Commit**
+   ```bash
+   git add .
+   git commit -m "feat: descriptive commit message"
+   ```
+   - ❌ DO NOT push automatically
+   - User decides when to push
+
+### Shortcut Command
+If you forget steps, type **"finish"** and the agent will:
+1. Run `npm run build`
+2. Update `.cursor-updates`
+3. Commit changes
+4. NOT push (manual step)
+
+---
+
+## 🚨 Critical Rules (NEVER BREAK)
+
+1. ❌ **NO `any` types** - Always explicitly type
+2. ❌ **NO direct Firestore access** - Use Firebase SDK methods only
+3. ❌ **NO security rules bypass** - Always test with proper Firestore Security Rules
+4. ❌ **NO Radix/shadcn** - Build with Tailwind
+5. ✅ **ALWAYS build** before commit
+6. ✅ **ALWAYS update** `.cursor-updates`
+7. ✅ **ALWAYS validate** inputs with Zod
+8. ✅ **ALWAYS use** `"use client"` appropriately
+
+---
+
+## 📚 Quick Reference
+
+### Common Commands
+```bash
+# Development
+npm run dev
+
+# Build & Type Check
+npm run build
+npm run type-check
+
+# Database (Firestore)
+# Use Firebase Console for data management: https://console.firebase.google.com/
+# Local emulator: firebase emulators:start
+# Firestore rules: firebase deploy --only firestore:rules
+
+# Inngest Dev Server
+npx inngest-cli dev
+
+# Run Script
+npx tsx scripts/script-name.ts
+```
+
+### Import Aliases
+- `@/components` → `src/components`
+- `@/lib` → `src/lib`
+- `@/app` → `src/app`
+
+### Environment Files
+- `.env` - Development (gitignored)
+- `.env.example` - Template (committed)
+- `.env.production` - Production (not committed)
+
+---
+
+## 📖 Additional Resources
+
+- [Next.js Docs](https://nextjs.org/docs)
+- [Firebase Docs](https://firebase.google.com/docs)
+- [Firestore Docs](https://firebase.google.com/docs/firestore)
+- [tRPC Docs](https://trpc.io/docs)
+- [Tailwind CSS Docs](https://tailwindcss.com/docs)
+- [Inngest Docs](https://www.inngest.com/docs)
+- [OpenRouter API](https://openrouter.ai/docs)
+
+---
+
+**Last Updated**: October 24, 2025  
+**Version**: 1.0  
+**Maintainer**: Development Team

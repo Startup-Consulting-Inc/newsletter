@@ -1,0 +1,201 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // HELPER FUNCTIONS
+    // =========================================================================
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Get user document
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check if user has specific role
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+
+    // Check if user is Site Admin
+    function isSiteAdmin() {
+      return hasRole('Site Admin');
+    }
+
+    // Check if user is Newsletter Admin or higher
+    function isNewsletterAdmin() {
+      return isAuthenticated() &&
+        getUserData().role in ['Site Admin', 'Newsletter Admin'];
+    }
+
+    // Check if user is Newsletter Creator or higher (any authenticated user)
+    function isNewsletterCreator() {
+      return isAuthenticated() &&
+        getUserData().role in ['Site Admin', 'Newsletter Admin', 'Newsletter Creator'];
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+
+    // =========================================================================
+    // USERS COLLECTION
+    // =========================================================================
+
+    match /users/{userId} {
+      // Anyone authenticated can read user profiles
+      allow read: if isAuthenticated();
+
+      // Allow self-registration for new users OR Site Admin creating users
+      allow create: if (
+                        // Self-registration: user creating their own profile
+                        isAuthenticated() &&
+                        request.auth.uid == userId &&
+                        request.resource.data.email == request.auth.token.email &&
+                        request.resource.data.keys().hasAll(['name', 'email', 'role']) &&
+                        isValidEmail(request.resource.data.email) &&
+                        // New users can only create as Newsletter Creator
+                        request.resource.data.role == 'Newsletter Creator'
+                      ) || (
+                        // Site Admin creating users with any role
+                        isSiteAdmin() &&
+                        request.resource.data.keys().hasAll(['name', 'email', 'role']) &&
+                        isValidEmail(request.resource.data.email)
+                      );
+
+      // Site Admins can update any user, users can update their own profile (except role)
+      allow update: if isSiteAdmin() ||
+                      (isAuthenticated() &&
+                       request.auth.uid == userId &&
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
+
+      // Only Site Admins can delete users
+      allow delete: if isSiteAdmin();
+    }
+
+    // =========================================================================
+    // CATEGORIES COLLECTION
+    // =========================================================================
+
+    match /categories/{categoryId} {
+      // All authenticated users can read categories
+      allow read: if isAuthenticated();
+
+      // Newsletter Admins and above can create/update categories
+      allow create, update: if isNewsletterAdmin() &&
+                              request.resource.data.keys().hasAll(['name', 'count']);
+
+      // Newsletter Admins and above can delete categories
+      allow delete: if isNewsletterAdmin();
+    }
+
+    // =========================================================================
+    // RECIPIENT GROUPS COLLECTION
+    // =========================================================================
+
+    match /recipientGroups/{groupId} {
+      // All authenticated users can read groups
+      allow read: if isAuthenticated();
+
+      // Newsletter Admins and above can create/update groups
+      allow create, update: if isNewsletterAdmin() &&
+                              request.resource.data.keys().hasAll(['name', 'recipientCount']);
+
+      // Newsletter Admins and above can delete groups
+      allow delete: if isNewsletterAdmin();
+
+      // Recipients subcollection
+      match /recipients/{recipientId} {
+        // All authenticated users can read recipients
+        allow read: if isAuthenticated();
+
+        // Newsletter Admins and above can add recipients
+        allow create: if isNewsletterAdmin() &&
+                        request.resource.data.keys().hasAll(['email']) &&
+                        isValidEmail(request.resource.data.email);
+
+        // Newsletter Admins and above can update/delete recipients
+        allow update, delete: if isNewsletterAdmin();
+      }
+    }
+
+    // =========================================================================
+    // NEWSLETTERS COLLECTION
+    // =========================================================================
+
+    match /newsletters/{newsletterId} {
+      // All authenticated users can read newsletters
+      allow read: if isAuthenticated();
+
+      // Newsletter Creators and above can create newsletters
+      allow create: if isNewsletterCreator() &&
+                      request.resource.data.keys().hasAll([
+                        'subject',
+                        'htmlContent',
+                        'categoryId',
+                        'recipientGroupIds',
+                        'status'
+                      ]) &&
+                      request.resource.data.status in ['Draft', 'Scheduled', 'Sent', 'Paused'];
+
+      // Newsletter Creators and above can update newsletters
+      // Note: In production, you might want to restrict updates to draft newsletters only
+      allow update: if isNewsletterCreator();
+
+      // Only Newsletter Admins and above can delete newsletters
+      allow delete: if isNewsletterAdmin();
+    }
+
+    // =========================================================================
+    // MEDIA COLLECTION
+    // =========================================================================
+
+    match /media/{mediaId} {
+      // All authenticated users can read media
+      allow read: if isAuthenticated();
+
+      // Newsletter Creators and above can upload media
+      allow create: if isNewsletterCreator() &&
+                      request.resource.data.keys().hasAll([
+                        'url',
+                        'name',
+                        'size',
+                        'dimensions'
+                      ]);
+
+      // Only Newsletter Admins and above can delete media
+      allow delete: if isNewsletterAdmin();
+    }
+
+    // =========================================================================
+    // AUDIT LOGS COLLECTION
+    // =========================================================================
+
+    match /auditLogs/{logId} {
+      // Only Site Admins can read audit logs
+      allow read: if isSiteAdmin();
+
+      // System can create audit logs (via admin SDK or Cloud Functions)
+      // Client-side creation is restricted
+      allow create: if false;
+
+      // Audit logs cannot be updated or deleted (immutable)
+      allow update, delete: if false;
+    }
+
+    // =========================================================================
+    // DEFAULT DENY
+    // =========================================================================
+
+    // Deny access to any other documents not explicitly allowed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "location": "us-west1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": [
+    {
+      "bucket": "newsletter-b104f.firebasestorage.app",
+      "rules": "storage.rules"
+    }
+  ]
+}

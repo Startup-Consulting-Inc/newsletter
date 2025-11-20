@@ -23,8 +23,8 @@ ENV VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies (production only for smaller image)
-RUN npm ci --only=production
+# Install ALL dependencies (needed for build tools like vite)
+RUN npm ci
 
 # Copy source code
 COPY . .

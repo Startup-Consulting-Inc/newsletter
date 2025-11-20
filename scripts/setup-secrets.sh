@@ -110,10 +110,11 @@ create_or_update_secret "JWT_SECRET" "$JWT_SECRET"
 create_or_update_secret "OPENROUTER_API_KEY" "$OPENROUTER_API_KEY"
 echo ""
 
-# Grant Cloud Build service account access to all secrets
-echo -e "${BLUE}🔐 Granting Cloud Build access to secrets...${NC}"
+# Grant service account access to all secrets
+echo -e "${BLUE}🔐 Granting service account access to secrets...${NC}"
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 CLOUD_BUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
 ALL_SECRETS=(
   "VITE_FIREBASE_API_KEY"
@@ -129,22 +130,27 @@ ALL_SECRETS=(
   "OPENROUTER_API_KEY"
 )
 
+# Grant access to both service accounts (Cloud Build can use either)
+SERVICE_ACCOUNTS=("$CLOUD_BUILD_SA" "$COMPUTE_SA")
+
 for SECRET in "${ALL_SECRETS[@]}"; do
   # Check if secret exists before granting access
   if gcloud secrets describe "$SECRET" --project="$PROJECT_ID" &>/dev/null; then
-    # Check if permission already exists
-    if gcloud secrets get-iam-policy "$SECRET" --project="$PROJECT_ID" \
-       --flatten="bindings[].members" \
-       --filter="bindings.members:serviceAccount:${CLOUD_BUILD_SA}" &>/dev/null; then
-      echo -e "${YELLOW}⏭️  $SECRET: Cloud Build already has access${NC}"
-    else
-      gcloud secrets add-iam-policy-binding "$SECRET" \
-        --project="$PROJECT_ID" \
-        --member="serviceAccount:${CLOUD_BUILD_SA}" \
-        --role="roles/secretmanager.secretAccessor" \
-        &>/dev/null
-      echo -e "${GREEN}✅ Granted access: $SECRET${NC}"
-    fi
+    for SA in "${SERVICE_ACCOUNTS[@]}"; do
+      # Check if permission already exists
+      if gcloud secrets get-iam-policy "$SECRET" --project="$PROJECT_ID" \
+         --flatten="bindings[].members" \
+         --filter="bindings.members:serviceAccount:${SA}" &>/dev/null; then
+        echo -e "${YELLOW}⏭️  $SECRET: ${SA} already has access${NC}"
+      else
+        gcloud secrets add-iam-policy-binding "$SECRET" \
+          --project="$PROJECT_ID" \
+          --member="serviceAccount:${SA}" \
+          --role="roles/secretmanager.secretAccessor" \
+          &>/dev/null
+        echo -e "${GREEN}✅ Granted access: $SECRET → ${SA}${NC}"
+      fi
+    done
   fi
 done
 

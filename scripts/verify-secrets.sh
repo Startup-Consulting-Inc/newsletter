@@ -70,18 +70,39 @@ for SECRET in "${OPTIONAL_SECRETS[@]}"; do
 done
 echo ""
 
-# Check Cloud Build permissions
-echo -e "${BLUE}🔐 Checking Cloud Build service account permissions...${NC}"
+# Check service account permissions (both Cloud Build and Compute Engine)
+echo -e "${BLUE}🔐 Checking service account permissions...${NC}"
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 CLOUD_BUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
 for SECRET in "${EXISTING_SECRETS[@]}"; do
+  # Check both service accounts
+  CB_HAS_ACCESS=false
+  COMPUTE_HAS_ACCESS=false
+
   if gcloud secrets get-iam-policy "$SECRET" --project="$PROJECT_ID" \
      --flatten="bindings[].members" \
      --filter="bindings.members:serviceAccount:${CLOUD_BUILD_SA}" &>/dev/null; then
-    echo -e "${GREEN}✅ $SECRET${NC} - Cloud Build has access"
+    CB_HAS_ACCESS=true
+  fi
+
+  if gcloud secrets get-iam-policy "$SECRET" --project="$PROJECT_ID" \
+     --flatten="bindings[].members" \
+     --filter="bindings.members:serviceAccount:${COMPUTE_SA}" &>/dev/null; then
+    COMPUTE_HAS_ACCESS=true
+  fi
+
+  if [ "$CB_HAS_ACCESS" = true ] && [ "$COMPUTE_HAS_ACCESS" = true ]; then
+    echo -e "${GREEN}✅ $SECRET${NC} - Both service accounts have access"
+  elif [ "$CB_HAS_ACCESS" = true ]; then
+    echo -e "${YELLOW}⚠️  $SECRET${NC} - Only Cloud Build SA has access (Compute SA missing)"
+    PERMISSION_ISSUES+=("$SECRET")
+  elif [ "$COMPUTE_HAS_ACCESS" = true ]; then
+    echo -e "${YELLOW}⚠️  $SECRET${NC} - Only Compute SA has access (Cloud Build SA missing)"
+    PERMISSION_ISSUES+=("$SECRET")
   else
-    echo -e "${RED}❌ $SECRET${NC} - Cloud Build does NOT have access"
+    echo -e "${RED}❌ $SECRET${NC} - Neither service account has access"
     PERMISSION_ISSUES+=("$SECRET")
   fi
 done
@@ -95,6 +116,7 @@ echo ""
 
 echo -e "Project: ${YELLOW}$PROJECT_ID${NC}"
 echo -e "Cloud Build SA: ${YELLOW}$CLOUD_BUILD_SA${NC}"
+echo -e "Compute Engine SA: ${YELLOW}$COMPUTE_SA${NC}"
 echo ""
 
 if [ ${#MISSING_SECRETS[@]} -eq 0 ] && [ ${#PERMISSION_ISSUES[@]} -eq 0 ]; then
@@ -121,12 +143,19 @@ else
       echo "  - $SECRET"
     done
     echo ""
-    echo -e "${YELLOW}To fix: Run these commands:${NC}"
+    echo -e "${YELLOW}To fix: Run ./scripts/setup-secrets.sh or use these commands:${NC}"
     echo ""
     for SECRET in "${PERMISSION_ISSUES[@]}"; do
+      echo "# Grant to Cloud Build SA"
       echo "gcloud secrets add-iam-policy-binding $SECRET \\"
       echo "  --project=$PROJECT_ID \\"
       echo "  --member=\"serviceAccount:$CLOUD_BUILD_SA\" \\"
+      echo "  --role=\"roles/secretmanager.secretAccessor\""
+      echo ""
+      echo "# Grant to Compute Engine SA"
+      echo "gcloud secrets add-iam-policy-binding $SECRET \\"
+      echo "  --project=$PROJECT_ID \\"
+      echo "  --member=\"serviceAccount:$COMPUTE_SA\" \\"
       echo "  --role=\"roles/secretmanager.secretAccessor\""
       echo ""
     done

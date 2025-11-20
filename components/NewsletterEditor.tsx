@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Newsletter, NewsletterStatus, Category, RecipientGroup, MediaItem } from '../types';
 import { Save, Send, Clock, Image as ImageIcon, Eye, Code, UploadCloud, CheckCircle2, XCircle, Trash2, ArrowLeft, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 import { api } from '../services';
+import { functions } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
 
 interface EditorProps {
   newsletter?: Newsletter;
@@ -17,12 +19,17 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
   const [activeTab, setActiveTab] = useState<'edit' | 'preview' | 'fix-images'>('edit');
   const [isMediaModalOpen, setIsMediaModalOpen] = useState(false);
   const [imageToReplace, setImageToReplace] = useState<string | null>(null);
-  
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [groups, setGroups] = useState<RecipientGroup[]>([]);
   const [mediaLibrary, setMediaLibrary] = useState<MediaItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [detectedImages, setDetectedImages] = useState<string[]>([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduledDateTime, setScheduledDateTime] = useState<string>('');
+
+  // Check if newsletter is read-only (SENT status)
+  const isReadOnly = initialData?.status === NewsletterStatus.SENT;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -49,29 +56,54 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
       }
   }, [htmlContent, activeTab]);
 
-  const handleSave = async (status: NewsletterStatus) => {
+  const handleSave = async (status: NewsletterStatus, scheduleAt?: string) => {
     setIsSaving(true);
     try {
+      // First save/update the newsletter in Firestore
       const newNewsletter: Newsletter = {
         id: initialData?.id || `n${Date.now()}`,
         subject,
         htmlContent,
         categoryId,
         recipientGroupIds: selectedGroups,
-        status,
+        status: status === NewsletterStatus.SENT ? NewsletterStatus.DRAFT : status, // Save as draft first
         updatedAt: new Date().toISOString(),
         stats: initialData?.stats || { sent: 0, opened: 0, clicked: 0, bounced: 0 }
       };
-      
-      if (status === NewsletterStatus.SENT) {
-        newNewsletter.sentAt = new Date().toISOString();
-        newNewsletter.stats = { sent: selectedGroups.length * 100, opened: 0, clicked: 0, bounced: 0 };
+
+      // Add scheduled time if scheduling
+      if (status === NewsletterStatus.SCHEDULED && scheduleAt) {
+        newNewsletter.scheduledAt = new Date(scheduleAt).toISOString();
       }
 
       await api.saveNewsletter(newNewsletter);
+
+      // If status is SENT, call Cloud Function to actually send emails
+      if (status === NewsletterStatus.SENT) {
+        if (!functions) {
+          throw new Error('Firebase Functions not initialized');
+        }
+
+        console.log('🚀 Calling Cloud Function to send newsletter...');
+
+        const sendNewsletter = httpsCallable(functions, 'sendNewsletterFunction');
+        const result = await sendNewsletter({ newsletterId: newNewsletter.id });
+
+        console.log('✅ Newsletter sent:', result.data);
+
+        // Show success message
+        const data = result.data as any;
+        if (data.success) {
+          alert(`✅ Newsletter sent successfully!\n\nSent to: ${data.stats.sent} recipients\nFailed: ${data.stats.failed}`);
+        } else {
+          alert(`⚠️ Newsletter sent with some failures:\n\nSent: ${data.stats.sent}\nFailed: ${data.stats.failed}`);
+        }
+      }
+
       onSave();
-    } catch (error) {
-      console.error("Failed to save", error);
+    } catch (error: any) {
+      console.error("Failed to save/send newsletter:", error);
+      alert(`❌ Error: ${error.message || 'Failed to send newsletter. Please try again.'}`);
     } finally {
       setIsSaving(false);
     }
@@ -105,9 +137,27 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
      }
   };
 
+  const handleScheduleSubmit = () => {
+    if (!scheduledDateTime) {
+      alert('Please select a date and time');
+      return;
+    }
+
+    const selectedTime = new Date(scheduledDateTime);
+    const now = new Date();
+
+    if (selectedTime <= now) {
+      alert('Scheduled time must be in the future');
+      return;
+    }
+
+    setShowScheduleModal(false);
+    handleSave(NewsletterStatus.SCHEDULED, scheduledDateTime);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-8rem)]">
-      
+
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <div className="flex items-center gap-3">
@@ -117,19 +167,39 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
           <h2 className="text-lg font-semibold text-gray-800">
             {initialData ? 'Edit Newsletter' : 'New Newsletter'}
           </h2>
+          {isReadOnly && (
+            <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full flex items-center">
+              <CheckCircle2 className="w-3 h-3 mr-1" /> Sent
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => handleSave(NewsletterStatus.DRAFT)} disabled={isSaving} className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium flex items-center text-sm">
-            <Save className="w-4 h-4 mr-2" /> Save Draft
-          </button>
-          <button onClick={() => handleSave(NewsletterStatus.SCHEDULED)} disabled={isSaving} className="px-4 py-2 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium flex items-center text-sm">
-            <Clock className="w-4 h-4 mr-2" /> Schedule
-          </button>
-          <button onClick={() => handleSave(NewsletterStatus.SENT)} disabled={isSaving} className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-medium flex items-center text-sm shadow-sm">
-            <Send className="w-4 h-4 mr-2" /> Send Now
-          </button>
-        </div>
+        {!isReadOnly && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => handleSave(NewsletterStatus.DRAFT)} disabled={isSaving} className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium flex items-center text-sm">
+              <Save className="w-4 h-4 mr-2" /> Save Draft
+            </button>
+            <button onClick={() => setShowScheduleModal(true)} disabled={isSaving} className="px-4 py-2 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium flex items-center text-sm">
+              <Clock className="w-4 h-4 mr-2" /> Schedule
+            </button>
+            <button onClick={() => handleSave(NewsletterStatus.SENT)} disabled={isSaving} className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-medium flex items-center text-sm shadow-sm">
+              <Send className="w-4 h-4 mr-2" /> Send Now
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Read-Only Warning Banner */}
+      {isReadOnly && (
+        <div className="px-6 py-3 bg-green-50 border-b border-green-200 flex items-center">
+          <CheckCircle2 className="w-5 h-5 text-green-600 mr-3" />
+          <div>
+            <p className="text-sm font-medium text-green-800">This newsletter has been sent</p>
+            <p className="text-xs text-green-600 mt-0.5">
+              Sent newsletters are read-only and cannot be modified. You can view the content and statistics.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Main Editor Area */}
       <div className="flex-1 flex overflow-hidden">
@@ -139,11 +209,11 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Subject Line</label>
-              <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Enter compelling subject..." className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} disabled={isReadOnly} placeholder="Enter compelling subject..." className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={isReadOnly} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed">
                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -151,11 +221,11 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
               <label className="block text-sm font-medium text-gray-700 mb-2">Recipient Groups</label>
               <div className="space-y-2">
                 {groups.map(g => (
-                  <label key={g.id} className="flex items-center p-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-blue-300 transition-colors">
+                  <label key={g.id} className={`flex items-center p-2 bg-white border border-gray-200 rounded-lg ${isReadOnly ? 'cursor-default' : 'cursor-pointer hover:border-blue-300'} transition-colors`}>
                     <input type="checkbox" checked={selectedGroups.includes(g.id)} onChange={(e) => {
                         if (e.target.checked) setSelectedGroups([...selectedGroups, g.id]);
                         else setSelectedGroups(selectedGroups.filter(id => id !== g.id));
-                      }} className="w-4 h-4 text-blue-600 rounded border-gray-300" />
+                      }} disabled={isReadOnly} className="w-4 h-4 text-blue-600 rounded border-gray-300 disabled:cursor-not-allowed" />
                     <div className="ml-3">
                       <span className="block text-sm font-medium text-gray-900">{g.name}</span>
                       <span className="block text-xs text-gray-500">{g.recipientCount} recipients</span>
@@ -198,10 +268,11 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
           {/* Editor/Preview/Fixer */}
           <div className="flex-1 relative bg-gray-50">
             {activeTab === 'edit' && (
-              <textarea 
+              <textarea
                 value={htmlContent}
                 onChange={(e) => setHtmlContent(e.target.value)}
-                className="w-full h-full p-6 font-mono text-sm bg-gray-900 text-gray-300 resize-none focus:outline-none"
+                disabled={isReadOnly}
+                className="w-full h-full p-6 font-mono text-sm bg-gray-900 text-gray-300 resize-none focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="<html><body>Write or paste your HTML code here...</body></html>"
               />
             )}
@@ -267,7 +338,7 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
                     <XCircle className="w-6 h-6" />
                  </button>
               </div>
-              
+
               <div className="p-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
                   <p className="text-sm text-gray-500">Select from library or upload new</p>
                   <label className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg cursor-pointer transition-colors">
@@ -290,6 +361,57 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
                  ))}
               </div>
            </div>
+        </div>
+      )}
+
+      {/* Schedule Modal */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center">
+                <Clock className="w-5 h-5 mr-2 text-blue-600" />
+                Schedule Newsletter
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">Choose when to send this newsletter</p>
+            </div>
+
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Scheduled Date & Time
+              </label>
+              <input
+                type="datetime-local"
+                value={scheduledDateTime}
+                onChange={(e) => setScheduledDateTime(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                min={new Date().toISOString().slice(0, 16)}
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Newsletter will be automatically sent at the scheduled time
+              </p>
+            </div>
+
+            <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 rounded-b-xl">
+              <button
+                onClick={() => {
+                  setShowScheduleModal(false);
+                  setScheduledDateTime('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleScheduleSubmit}
+                disabled={!scheduledDateTime}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-medium text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                <Clock className="w-4 h-4 mr-2" />
+                Schedule Newsletter
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

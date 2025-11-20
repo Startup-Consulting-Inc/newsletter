@@ -23,8 +23,8 @@ ENV VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (production only for smaller image)
+RUN npm ci --only=production
 
 # Copy source code
 COPY . .
@@ -41,8 +41,9 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose port 80
-EXPOSE 80
+# Cloud Run expects PORT environment variable (defaults to 8080)
+ENV PORT=8080
+EXPOSE 8080
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]

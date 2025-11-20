@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { NewsletterEditor } from './components/NewsletterEditor';
 import { AdminPanel } from './components/AdminPanel';
 import { ProfilePage } from './components/ProfilePage';
 import { AuthPage } from './components/AuthPage';
-import { User, Newsletter } from './types';
-import { api, isDatabaseSeeded, seedFirestoreData, resetAndSeedData } from './services';
+import { Analytics } from './components/Analytics';
+import { User, Newsletter, NewsletterStatus } from './types';
+import { api, isDatabaseSeeded, seedFirestoreData } from './services';
 import { auth } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Plus, BarChart3 } from 'lucide-react';
+import { logUserLogin, logUserLogout } from './services/auditService';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -16,17 +18,21 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingNewsletter, setEditingNewsletter] = useState<Newsletter | undefined>(undefined);
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
 
   // Dashboard Data
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
 
-  // Auto-seed database on first load
+  // Filter and sort state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<NewsletterStatus[]>([]);
+  const [sortBy, setSortBy] = useState<'updatedAt' | 'subject' | 'scheduledAt' | 'sentAt' | 'opens'>('updatedAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Auto-seed database on first load (only if empty)
   useEffect(() => {
     const checkAndSeedDatabase = async () => {
       try {
-        // 🔧 DEV: Uncomment to force database reset
-        await resetAndSeedData();
-
         const isSeeded = await isDatabaseSeeded();
         if (!isSeeded) {
           console.log('🌱 Database empty, seeding initial data...');
@@ -40,6 +46,10 @@ export default function App() {
 
     checkAndSeedDatabase();
   }, []);
+
+  // 💡 To manually reset database with seed data, run:
+  //    npm run seed         (seed if empty)
+  //    npm run seed:reset   (force reset and reseed)
 
   useEffect(() => {
     if (!auth) {
@@ -60,6 +70,16 @@ export default function App() {
           );
           setUser(appUser);
           setActiveTab('dashboard');
+
+          // Log user login and track session start
+          setSessionStartTime(Date.now());
+          await logUserLogin({
+            userId: appUser.id,
+            userName: appUser.name,
+            userEmail: appUser.email,
+            userRole: appUser.role,
+            method: firebaseUser.providerData[0]?.providerId || 'unknown',
+          });
         } catch (error) {
           console.error('Failed to sync user with Firestore:', error);
           // Sign out on sync failure to prevent redirect loop
@@ -83,9 +103,22 @@ export default function App() {
   }, [user, activeTab, isEditorOpen]);
 
   const handleSignOut = async () => {
-    if (auth) {
+    if (auth && user) {
+        // Log user logout with session duration
+        const sessionDuration = sessionStartTime
+          ? Math.round((Date.now() - sessionStartTime) / 1000) // seconds
+          : undefined;
+
+        await logUserLogout({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          sessionDuration,
+        });
+
         await signOut(auth);
         setUser(null);
+        setSessionStartTime(null);
     }
   };
 
@@ -103,6 +136,50 @@ export default function App() {
   const handleUpdateUser = (updatedUser: User) => {
       setUser(updatedUser);
   };
+
+  // Filter and sort newsletters
+  const filteredAndSortedNewsletters = useMemo(() => {
+    let result = [...newsletters];
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      result = result.filter(n =>
+        n.subject.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Apply status filter
+    if (statusFilter.length > 0) {
+      result = result.filter(n => statusFilter.includes(n.status));
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let compareValue = 0;
+
+      switch (sortBy) {
+        case 'subject':
+          compareValue = a.subject.localeCompare(b.subject);
+          break;
+        case 'scheduledAt':
+          compareValue = (a.scheduledAt || '').localeCompare(b.scheduledAt || '');
+          break;
+        case 'sentAt':
+          compareValue = (a.sentAt || '').localeCompare(b.sentAt || '');
+          break;
+        case 'opens':
+          compareValue = (a.stats?.opened || 0) - (b.stats?.opened || 0);
+          break;
+        case 'updatedAt':
+        default:
+          compareValue = a.updatedAt.localeCompare(b.updatedAt);
+      }
+
+      return sortDirection === 'asc' ? compareValue : -compareValue;
+    });
+
+    return result;
+  }, [newsletters, searchTerm, statusFilter, sortBy, sortDirection]);
 
   if (isLoading) {
       return (
@@ -151,8 +228,90 @@ export default function App() {
                </button>
             </div>
 
+            {/* Filter and Sort Controls */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+              <div className="flex flex-col sm:flex-row gap-4">
+                {/* Search Input */}
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    placeholder="🔍 Search newsletters..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Status Filter */}
+                <div className="relative">
+                  <select
+                    multiple
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(
+                      Array.from(e.target.selectedOptions, option => option.value as NewsletterStatus)
+                    )}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px] h-10"
+                    size={1}
+                  >
+                    <option value="">All Status</option>
+                    <option value={NewsletterStatus.DRAFT}>Draft</option>
+                    <option value={NewsletterStatus.SCHEDULED}>Scheduled</option>
+                    <option value={NewsletterStatus.SENDING}>Sending</option>
+                    <option value={NewsletterStatus.SENT}>Sent</option>
+                    <option value={NewsletterStatus.PAUSED}>Paused</option>
+                  </select>
+                  {statusFilter.length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                      {statusFilter.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Sort Dropdown */}
+                <div className="flex gap-2">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as any)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="updatedAt">Last Updated</option>
+                    <option value="subject">Subject (A-Z)</option>
+                    <option value="scheduledAt">Scheduled Date</option>
+                    <option value="sentAt">Sent Date</option>
+                    <option value="opens">Open Count</option>
+                  </select>
+
+                  <button
+                    onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
+                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                  >
+                    {sortDirection === 'asc' ? '↑' : '↓'}
+                  </button>
+                </div>
+
+                {/* Clear Filters */}
+                {(searchTerm || statusFilter.length > 0) && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm('');
+                      setStatusFilter([]);
+                    }}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg whitespace-nowrap"
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+
+              {/* Result Count */}
+              <p className="text-sm text-gray-600 mt-3">
+                Showing {filteredAndSortedNewsletters.length} of {newsletters.length} newsletters
+              </p>
+            </div>
+
             <div className="grid gap-4">
-               {newsletters.map(n => (
+               {filteredAndSortedNewsletters.map(n => (
                  <div key={n.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center hover:border-blue-300 transition-all">
                     <div>
                        <h3 className="text-lg font-semibold text-gray-800 mb-1">{n.subject}</h3>
@@ -164,7 +323,13 @@ export default function App() {
                           }`}>
                             {n.status}
                           </span>
-                          <span>Updated: {new Date(n.updatedAt).toLocaleDateString()}</span>
+                          <span>
+                            {n.status === 'Scheduled' && n.scheduledAt
+                              ? `Scheduled for: ${new Date(n.scheduledAt).toLocaleString()}`
+                              : n.status === 'Sent' && n.sentAt
+                              ? `Sent: ${new Date(n.sentAt).toLocaleString()}`
+                              : `Updated: ${new Date(n.updatedAt).toLocaleDateString()}`}
+                          </span>
                           {n.stats && (
                             <span className="flex items-center text-gray-400">
                                <BarChart3 className="w-3 h-3 mr-1" />
@@ -180,9 +345,11 @@ export default function App() {
                     </div>
                  </div>
                ))}
-               {newsletters.length === 0 && (
+               {filteredAndSortedNewsletters.length === 0 && (
                    <div className="text-center py-12 text-gray-500 bg-white rounded-xl border border-gray-200">
-                       No newsletters found. Create one to get started!
+                       {newsletters.length === 0
+                         ? 'No newsletters found. Create one to get started!'
+                         : 'No newsletters match your filters. Try adjusting your search or filters.'}
                    </div>
                )}
             </div>
@@ -190,31 +357,7 @@ export default function App() {
         );
 
       case 'analytics':
-        return (
-             <div className="space-y-6">
-                <h1 className="text-2xl font-bold text-gray-900">Analytics Overview</h1>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                        <p className="text-sm text-gray-500 font-medium uppercase">Total Emails Sent</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-2">12,450</p>
-                        <p className="text-sm text-green-600 mt-1">+12% from last month</p>
-                    </div>
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                        <p className="text-sm text-gray-500 font-medium uppercase">Avg. Open Rate</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-2">68.5%</p>
-                        <p className="text-sm text-green-600 mt-1">+4.2% from last month</p>
-                    </div>
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                        <p className="text-sm text-gray-500 font-medium uppercase">Avg. Click Rate</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-2">24.1%</p>
-                        <p className="text-sm text-red-600 mt-1">-1.5% from last month</p>
-                    </div>
-                </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-64 flex items-center justify-center text-gray-400">
-                    Chart Visualization Placeholder
-                </div>
-             </div>
-        );
+        return <Analytics newsletters={newsletters} />;
 
       default:
         return (

@@ -156,28 +156,52 @@ To test admin features, you need to manually upgrade your role:
 
 ---
 
-## Default Mock Data
+## Seeding Test Data
 
-The platform comes with sample data:
+### Understanding Test Data vs Authentication
 
-### Users
-- **Alice Admin** (alice@company.com) - Site Admin
-- **Bob Editor** (bob@company.com) - Newsletter Admin
-- **Charlie Creator** (charlie@company.com) - Newsletter Creator
+The platform includes a seeding script that populates Firestore with test data. However, **important distinction:**
 
-### Categories
-- Weekly Updates (12 newsletters)
-- HR Announcements (5 newsletters)
-- Engineering Tech Talk (8 newsletters)
-- Social Events (3 newsletters)
+- **Seed data** = Database records (users, newsletters, categories, etc.)
+- **Authentication** = Google Sign-In only (no passwords)
+- **Test users cannot log in** unless they have actual Google accounts
 
-### Recipient Groups
-- All Employees (450 recipients)
-- Engineering Dept (120 recipients)
-- Marketing Team (45 recipients)
-- Leadership (25 recipients)
+### Quick Seed Command
 
-### Sample Newsletters
+**Option 1: Seed if database is empty (Safe)**
+```bash
+npm run seed
+```
+
+**Option 2: Force reset and reseed (Destructive - deletes all data)**
+```bash
+npm run seed:reset
+```
+
+**⚠️ IMPORTANT:** Seeding requires temporarily enabling development mode in Firestore rules. See [FIRESTORE_SETUP.md](./FIRESTORE_SETUP.md#step-3-seed-initial-data) for detailed instructions.
+
+### Seed Data Includes:
+
+#### Test Users (Database Records Only)
+| Name | Email | Role | Can Login? |
+|------|-------|------|------------|
+| **Alice Admin** | alice@company.com | Site Admin | ❌ Only if you own this Google account |
+| **Bob Editor** | bob@company.com | Newsletter Admin | ❌ Only if you own this Google account |
+| **Charlie Creator** | charlie@company.com | Newsletter Creator | ❌ Only if you own this Google account |
+
+**To test admin features:**
+1. Sign in with **your own Google account**
+2. Go to Firebase Console → Firestore → `users` collection
+3. Find your user document and change `role` to "Site Admin"
+4. Refresh the app to access admin panel
+
+#### Categories
+- Weekly Updates, HR Announcements, Engineering Tech Talk, Social Events
+
+#### Recipient Groups
+- All Employees (450), Engineering Dept (120), Marketing Team (45), Leadership (25)
+
+#### Sample Newsletters
 - Q3 Company All-Hands Recap (Sent)
 - New Health Benefits Overview (Draft)
 - Engineering Demo Day (Scheduled)

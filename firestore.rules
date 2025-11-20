@@ -4,6 +4,29 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // =========================================================================
+    // DEVELOPMENT MODE (SEEDING SCRIPTS)
+    // =========================================================================
+    // IMPORTANT: Uncomment the rule below ONLY during development when running
+    // seed scripts (npm run seed / npm run seed:reset).
+    //
+    // ⚠️  WARNING: This allows ALL read/write operations without authentication!
+    // ⚠️  Deploy this rule, run your seed script, then IMMEDIATELY comment it
+    //     out and redeploy to restore security.
+    //
+    // Usage:
+    //   1. Uncomment the rule below
+    //   2. Deploy: firebase deploy --only firestore:rules
+    //   3. Run: npm run seed:reset
+    //   4. Comment out the rule again
+    //   5. Deploy: firebase deploy --only firestore:rules
+    // =========================================================================
+
+    // 🔓 DEVELOPMENT: Uncomment to allow seeding (REMOVE BEFORE PRODUCTION!)
+    // match /{document=**} {
+    //   allow read, write: if true;
+    // }
+
+    // =========================================================================
     // HELPER FUNCTIONS
     // =========================================================================
 

@@ -130,9 +130,111 @@ Project Console: https://console.firebase.google.com/project/newsletter-b104f/ov
 
 ## Step 3: Seed Initial Data
 
-The application **automatically seeds** the database on first load!
+### Overview
 
-### Automatic Seeding (Recommended)
+The platform includes a **standalone seeding script** that populates the database with test data. This script runs independently from the application and requires temporary permission adjustments.
+
+### 3.1 Enable Development Mode in Firestore Rules
+
+**IMPORTANT:** The seeding script needs write access without authentication. You must temporarily enable development mode in your security rules.
+
+1. **Edit `firestore.rules`** and uncomment lines 25-27:
+
+   ```javascript
+   // Change from:
+   // match /{document=**} {
+   //   allow read, write: if true;
+   // }
+
+   // To:
+   match /{document=**} {
+     allow read, write: if true;
+   }
+   ```
+
+   ⚠️ **WARNING:** This allows ALL read/write operations without authentication!
+
+2. **Deploy the updated rules:**
+   ```bash
+   firebase deploy --only firestore:rules
+   ```
+
+### 3.2 Run the Seeding Script
+
+Choose one of the following commands:
+
+**Option A: Seed if database is empty (Safe)**
+```bash
+npm run seed
+```
+
+This checks if data exists first and only seeds if the database is empty.
+
+**Option B: Force reset and reseed (Destructive)**
+```bash
+npm run seed:reset
+```
+
+⚠️ **WARNING:** This **deletes ALL existing data** and reseeds from scratch!
+
+**Expected output:**
+```
+🔥 Firebase Database Seeding Tool
+
+🔍 Checking database status...
+
+🌱 Database is empty. Seeding initial data...
+🌱 Starting Firestore data seeding...
+👥 Seeding users...
+   ✓ Added 3 users
+📁 Seeding categories...
+   ✓ Added 4 categories
+👨‍👩‍👧‍👦 Seeding recipient groups...
+   ✓ Added 4 recipient groups
+📧 Seeding newsletters...
+   ✓ Added 3 newsletters
+🖼️  Seeding media items...
+   ✓ Added 3 media items
+📋 Seeding audit logs...
+   ✓ Added 3 audit logs
+✅ Firestore seeding completed successfully!
+
+📊 Final Database Stats:
+   Users: 3
+   Categories: 4
+   Recipient Groups: 4
+   Newsletters: 3
+   Media Items: 3
+   Audit Logs: 3
+
+🎉 Done! You can now use the application with test data.
+```
+
+### 3.3 Restore Security Rules (CRITICAL!)
+
+**IMMEDIATELY** after seeding, restore the production security rules:
+
+1. **Edit `firestore.rules`** and re-comment lines 25-27:
+
+   ```javascript
+   // 🔓 DEVELOPMENT: Uncomment to allow seeding (REMOVE BEFORE PRODUCTION!)
+   // match /{document=**} {
+   //   allow read, write: if true;
+   // }
+   ```
+
+2. **Deploy the restored rules:**
+   ```bash
+   firebase deploy --only firestore:rules
+   ```
+
+3. **Verify rules are secure:**
+   - Go to Firebase Console → Firestore → Rules tab
+   - Ensure the development rule is commented out
+
+### 3.4 Automatic Seeding (Browser)
+
+The application also includes automatic seeding when you first load it in the browser:
 
 1. **Run the application:**
    ```bash
@@ -141,37 +243,12 @@ The application **automatically seeds** the database on first load!
 
 2. **Open browser** to http://localhost:5173
 
-3. **Check console** - You should see:
-   ```
-   🌱 Database empty, seeding initial data...
-   👥 Seeding users...
-      ✓ Added 3 users
-   📁 Seeding categories...
-      ✓ Added 4 categories
-   👨‍👩‍👧‍👦 Seeding recipient groups...
-      ✓ Added 4 recipient groups
-   📧 Seeding newsletters...
-      ✓ Added 3 newsletters
-   🖼️  Seeding media items...
-      ✓ Added 3 media items
-   📋 Seeding audit logs...
-      ✓ Added 3 audit logs
-   ✅ Firestore seeding completed successfully!
-   ```
+3. **Sign in with Google** - The app will automatically seed if the database is empty
 
-### Manual Seeding (Optional)
-
-If you need to manually seed or reseed:
-
-```typescript
-import { seedFirestoreData, resetAndSeedData } from './services';
-
-// Seed if empty (safe - won't overwrite)
-await seedFirestoreData();
-
-// Reset and reseed (⚠️ DELETES ALL DATA!)
-await resetAndSeedData();
-```
+**Note:** Automatic seeding only works if:
+- Database is completely empty
+- Your Google account has the necessary permissions
+- Firestore rules allow authenticated write access
 
 ---
 
@@ -303,21 +380,60 @@ export { api } from './mockApi';          // ✅ Active
 
 ### Initial Seed Data
 
-**Users:**
-- Alice Admin (Site Admin) - alice@company.com
-- Bob Editor (Newsletter Admin) - bob@company.com
-- Charlie Creator (Newsletter Creator) - charlie@company.com
+#### Test Users (Database Records)
+
+The seeding script creates 3 test user records in Firestore:
+
+| Name | Email | Role | Description |
+|------|-------|------|-------------|
+| **Alice Admin** | alice@company.com | Site Admin | Head of Internal IT |
+| **Bob Editor** | bob@company.com | Newsletter Admin | Communications Director |
+| **Charlie Creator** | charlie@company.com | Newsletter Creator | Content Specialist |
+
+**⚠️ IMPORTANT: Authentication vs Database Records**
+
+These users are **database records only** - they represent user profiles stored in Firestore. To actually log in to the application:
+
+1. **You must use Google Sign-In** - The platform uses Firebase Authentication with Google OAuth
+2. **No passwords exist** - Authentication is handled entirely through Google accounts
+3. **Test users cannot log in** - Unless they have actual Google accounts with matching emails
+
+**How to Use Test User Roles:**
+
+**Option A: Manually Upgrade Your Role (Recommended)**
+1. Sign in with your Google account
+2. Your profile will be auto-created with "Newsletter Creator" role
+3. Go to Firebase Console → Firestore Database → `users` collection
+4. Find your user document (by your email)
+5. Edit the `role` field to "Site Admin" or "Newsletter Admin"
+6. Refresh the application to see admin features
+
+**Option B: Use Matching Google Accounts**
+- If you have Google accounts with emails `alice@company.com`, `bob@company.com`, or `charlie@company.com`
+- Sign in with those accounts to match the seeded user records
+- The app will sync with the existing Firestore records
+
+#### Other Seed Data
 
 **Categories:**
 - Weekly Updates, HR Announcements, Engineering Tech Talk, Social Events
 
 **Recipient Groups:**
-- All Employees, Engineering Dept, Marketing Team, Leadership
+- All Employees (450 recipients)
+- Engineering Dept (120 recipients)
+- Marketing Team (45 recipients)
+- Leadership (25 recipients)
 
 **Newsletters:**
-- Q3 Company All-Hands Recap (Sent)
+- Q3 Company All-Hands Recap (Sent - 450 sent, 380 opened, 150 clicked)
 - New Health Benefits Overview (Draft)
-- Engineering Demo Day (Scheduled)
+- Engineering Demo Day (Scheduled for 2023-11-01)
+
+**Media Items:**
+- 3 placeholder images from picsum.photos
+
+**Audit Logs:**
+- 3 sample activity logs tracking user creation, category addition, and newsletter creation
 
 ---
 

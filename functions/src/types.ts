@@ -1,45 +1,14 @@
-export enum UserRole {
-  SITE_ADMIN = 'Site Admin',
-  NEWSLETTER_ADMIN = 'Newsletter Admin',
-  NEWSLETTER_CREATOR = 'Newsletter Creator'
-}
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  description?: string;
-  linkedinUrl?: string;
-  avatarUrl?: string;
-}
+/**
+ * Shared TypeScript types for Firebase Functions
+ * Mirrors types from main application
+ */
 
 export enum NewsletterStatus {
   DRAFT = 'Draft',
   SCHEDULED = 'Scheduled',
-  SENDING = 'Sending',
   SENT = 'Sent',
-  PAUSED = 'Paused'
-}
-
-export interface Category {
-  id: string;
-  name: string;
-  count: number;
-}
-
-export interface Recipient {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-}
-
-export interface RecipientGroup {
-  id: string;
-  name: string;
-  recipientCount: number;
-  recipients?: Recipient[]; // Optional for list view, populated in detail view
+  PAUSED = 'Paused',
+  SENDING = 'Sending', // New status for in-progress sends
 }
 
 export interface Newsletter {
@@ -58,6 +27,51 @@ export interface Newsletter {
     bounced: number;
   };
   updatedAt: string;
+  createdAt?: string;
+}
+
+export interface Recipient {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface RecipientGroup {
+  id: string;
+  name: string;
+  recipientCount: number;
+  recipients?: Recipient[];
+}
+
+export interface TrackingEvent {
+  id?: string;
+  newsletterId: string;
+  recipientId: string;
+  recipientEmail: string;
+  eventType: 'open' | 'click';
+  linkUrl?: string; // For click events
+  timestamp: Date;
+  userAgent?: string;
+  ipAddress?: string;
+}
+
+export interface SendResult {
+  success: boolean;
+  newsletterId: string;
+  totalRecipients: number;
+  successCount: number;
+  failureCount: number;
+  errors: Array<{
+    recipientEmail: string;
+    error: string;
+  }>;
+}
+
+export interface EmailTemplate {
+  subject: string;
+  htmlContent: string;
+  plainTextContent: string;
 }
 
 // ============================================================================
@@ -144,14 +158,14 @@ export interface RequestMetadata {
 
 export interface AuditLogEntry {
   // Core Identification
-  id: string;
-  timestamp: string;
+  id?: string;
+  timestamp: any; // Firestore Timestamp or Date
 
   // Actor Information
   userId: string;
   userName: string;
   userEmail?: string;
-  userRole?: UserRole;
+  userRole?: string;
 
   // Action Details
   action: AuditAction;
@@ -162,23 +176,16 @@ export interface AuditLogEntry {
   targetType?: string;
   targetId?: string;
   targetName?: string;
-
-  // Legacy field for backward compatibility
-  target?: string;
+  target?: string; // Legacy field for backward compatibility
 
   // Context & Metadata
   details?: {
-    // Action-specific data
     [key: string]: any;
-
-    // Common fields
     previousValue?: any;
     newValue?: any;
     changes?: string[];
     errorMessage?: string;
     duration?: number;
-
-    // Counts & stats
     affectedCount?: number;
     successCount?: number;
     failureCount?: number;
@@ -195,12 +202,4 @@ export interface AuditLogEntry {
     region?: string;
     city?: string;
   };
-}
-
-export interface MediaItem {
-  id: string;
-  url: string;
-  name: string;
-  size: string;
-  dimensions: string;
 }

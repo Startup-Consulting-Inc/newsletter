@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { User, UserRole, AuditLogEntry, Category, RecipientGroup, Recipient } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { User, UserRole, AuditLogEntry, Category, RecipientGroup, Recipient, AuditCategory, AuditSeverity } from '../types';
 import { api } from '../services';
 import { Plus, Search, Trash2, Edit, Download, X, Upload, Users as UsersIcon, List } from 'lucide-react';
 
@@ -15,8 +15,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [groups, setGroups] = useState<RecipientGroup[]>([]);
-  
-  const [searchTerm, setSearchTerm] = useState('');
+
+  // Users tab filter/sort state
+  const [usersSearch, setUsersSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<UserRole[]>([]);
+  const [usersSortBy, setUsersSortBy] = useState<'name' | 'email' | 'role'>('name');
+  const [usersSortDir, setUsersSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Audit Log tab filter/sort state
+  const [auditSearch, setAuditSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<AuditCategory[]>([]);
+  const [severityFilter, setSeverityFilter] = useState<AuditSeverity[]>([]);
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | '7d' | '30d'>('all');
+  const [auditSortBy, setAuditSortBy] = useState<'timestamp' | 'action' | 'userName' | 'severity' | 'category'>('timestamp');
+  const [auditSortDir, setAuditSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // Categories tab filter/sort state
+  const [categoriesSearch, setCategoriesSearch] = useState('');
+  const [categoriesSortBy, setCategoriesSortBy] = useState<'name' | 'count'>('name');
+  const [categoriesSortDir, setCategoriesSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Groups tab filter/sort state
+  const [groupsSearch, setGroupsSearch] = useState('');
+  const [groupsSortBy, setGroupsSortBy] = useState<'name' | 'recipientCount'>('name');
+  const [groupsSortDir, setGroupsSortDir] = useState<'asc' | 'desc'>('asc');
   
   // Modals State
   const [showUserModal, setShowUserModal] = useState(false);
@@ -41,6 +63,170 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   useEffect(() => {
     loadData();
   }, [activeTab, isSiteAdmin]);
+
+  // Filtered and sorted data for each tab
+  const filteredAndSortedUsers = useMemo(() => {
+    let result = [...users];
+
+    // Apply search filter
+    if (usersSearch.trim()) {
+      const searchLower = usersSearch.toLowerCase();
+      result = result.filter(u =>
+        u.name.toLowerCase().includes(searchLower) ||
+        u.email.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Apply role filter
+    if (roleFilter.length > 0) {
+      result = result.filter(u => roleFilter.includes(u.role));
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let compareValue = 0;
+      switch (usersSortBy) {
+        case 'name':
+          compareValue = a.name.localeCompare(b.name);
+          break;
+        case 'email':
+          compareValue = a.email.localeCompare(b.email);
+          break;
+        case 'role':
+          compareValue = a.role.localeCompare(b.role);
+          break;
+      }
+      return usersSortDir === 'asc' ? compareValue : -compareValue;
+    });
+
+    return result;
+  }, [users, usersSearch, roleFilter, usersSortBy, usersSortDir]);
+
+  const filteredAndSortedLogs = useMemo(() => {
+    let result = [...logs];
+
+    // Apply search filter
+    if (auditSearch.trim()) {
+      const searchLower = auditSearch.toLowerCase();
+      result = result.filter(l =>
+        l.action.toLowerCase().includes(searchLower) ||
+        l.userName.toLowerCase().includes(searchLower) ||
+        (l.target && l.target.toLowerCase().includes(searchLower)) ||
+        (l.targetName && l.targetName.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Apply category filter
+    if (categoryFilter.length > 0) {
+      result = result.filter(l => categoryFilter.includes(l.category));
+    }
+
+    // Apply severity filter
+    if (severityFilter.length > 0) {
+      result = result.filter(l => severityFilter.includes(l.severity));
+    }
+
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      result = result.filter(l => {
+        const logDate = new Date(l.timestamp);
+
+        switch (dateFilter) {
+          case 'today':
+            return logDate >= today;
+          case '7d':
+            const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+            return logDate >= sevenDaysAgo;
+          case '30d':
+            const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+            return logDate >= thirtyDaysAgo;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let compareValue = 0;
+      switch (auditSortBy) {
+        case 'timestamp':
+          compareValue = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+          break;
+        case 'action':
+          compareValue = a.action.localeCompare(b.action);
+          break;
+        case 'userName':
+          compareValue = a.userName.localeCompare(b.userName);
+          break;
+        case 'severity':
+          const severityOrder = { 'CRITICAL': 0, 'ERROR': 1, 'WARNING': 2, 'INFO': 3 };
+          compareValue = (severityOrder[a.severity] || 999) - (severityOrder[b.severity] || 999);
+          break;
+        case 'category':
+          compareValue = a.category.localeCompare(b.category);
+          break;
+      }
+      return auditSortDir === 'asc' ? compareValue : -compareValue;
+    });
+
+    return result;
+  }, [logs, auditSearch, categoryFilter, severityFilter, dateFilter, auditSortBy, auditSortDir]);
+
+  const filteredAndSortedCategories = useMemo(() => {
+    let result = [...categories];
+
+    // Apply search filter
+    if (categoriesSearch.trim()) {
+      const searchLower = categoriesSearch.toLowerCase();
+      result = result.filter(c => c.name.toLowerCase().includes(searchLower));
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let compareValue = 0;
+      switch (categoriesSortBy) {
+        case 'name':
+          compareValue = a.name.localeCompare(b.name);
+          break;
+        case 'count':
+          compareValue = a.count - b.count;
+          break;
+      }
+      return categoriesSortDir === 'asc' ? compareValue : -compareValue;
+    });
+
+    return result;
+  }, [categories, categoriesSearch, categoriesSortBy, categoriesSortDir]);
+
+  const filteredAndSortedGroups = useMemo(() => {
+    let result = [...groups];
+
+    // Apply search filter
+    if (groupsSearch.trim()) {
+      const searchLower = groupsSearch.toLowerCase();
+      result = result.filter(g => g.name.toLowerCase().includes(searchLower));
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let compareValue = 0;
+      switch (groupsSortBy) {
+        case 'name':
+          compareValue = a.name.localeCompare(b.name);
+          break;
+        case 'recipientCount':
+          compareValue = a.recipientCount - b.recipientCount;
+          break;
+      }
+      return groupsSortDir === 'asc' ? compareValue : -compareValue;
+    });
+
+    return result;
+  }, [groups, groupsSearch, groupsSortBy, groupsSortDir]);
 
   // User Actions
   const handleSaveUser = async () => {
@@ -217,42 +403,339 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
         {renderTabs()}
       </div>
 
-      {/* Toolbar */}
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl border border-gray-200 shadow-sm gap-4">
-        <div className="relative w-full md:w-96">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder={`Search ${activeTab}...`} 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-          />
+      {/* Filter Toolbars */}
+      {activeTab === 'users' && (
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Search Input */}
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="🔍 Search by name or email..."
+                value={usersSearch}
+                onChange={(e) => setUsersSearch(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            {/* Role Filter */}
+            <div className="relative">
+              <select
+                multiple
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(
+                  Array.from(e.target.selectedOptions, option => option.value as UserRole)
+                )}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px] h-10"
+                size={1}
+              >
+                <option value="">All Roles</option>
+                {Object.values(UserRole).map(role => (
+                  <option key={role} value={role}>{role}</option>
+                ))}
+              </select>
+              {roleFilter.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {roleFilter.length}
+                </span>
+              )}
+            </div>
+
+            {/* Sort Dropdown */}
+            <div className="flex gap-2">
+              <select
+                value={usersSortBy}
+                onChange={(e) => setUsersSortBy(e.target.value as any)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="name">Sort by Name</option>
+                <option value="email">Sort by Email</option>
+                <option value="role">Sort by Role</option>
+              </select>
+
+              <button
+                onClick={() => setUsersSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                title={usersSortDir === 'asc' ? 'Ascending' : 'Descending'}
+              >
+                {usersSortDir === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
+
+            {/* Clear + Add Button */}
+            {(usersSearch || roleFilter.length > 0) && (
+              <button
+                onClick={() => {
+                  setUsersSearch('');
+                  setRoleFilter([]);
+                }}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg whitespace-nowrap"
+              >
+                Clear Filters
+              </button>
+            )}
+
+            <button
+              onClick={() => { setUserData({ role: UserRole.NEWSLETTER_CREATOR }); setShowUserModal(true); }}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add User
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-600 mt-3">
+            Showing {filteredAndSortedUsers.length} of {users.length} users
+          </p>
         </div>
-        
-        <div className="flex gap-2 w-full md:w-auto">
-            {activeTab === 'users' && (
-                <button onClick={() => { setUserData({ role: UserRole.NEWSLETTER_CREATOR }); setShowUserModal(true); }} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium w-full md:w-auto justify-center">
-                    <Plus className="w-4 h-4 mr-2" /> Add User
+      )}
+
+      {activeTab === 'audit' && (
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex flex-col gap-4">
+            {/* Row 1: Search + Category + Severity */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder="🔍 Search action, user, or target..."
+                  value={auditSearch}
+                  onChange={(e) => setAuditSearch(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="relative">
+                <select
+                  multiple
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(
+                    Array.from(e.target.selectedOptions, option => option.value as AuditCategory)
+                  )}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px] h-10"
+                  size={1}
+                >
+                  <option value="">All Categories</option>
+                  {Object.values(AuditCategory).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+                {categoryFilter.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {categoryFilter.length}
+                  </span>
+                )}
+              </div>
+
+              <div className="relative">
+                <select
+                  multiple
+                  value={severityFilter}
+                  onChange={(e) => setSeverityFilter(
+                    Array.from(e.target.selectedOptions, option => option.value as AuditSeverity)
+                  )}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[140px] h-10"
+                  size={1}
+                >
+                  <option value="">All Severities</option>
+                  <option value="CRITICAL">Critical</option>
+                  <option value="ERROR">Error</option>
+                  <option value="WARNING">Warning</option>
+                  <option value="INFO">Info</option>
+                </select>
+                {severityFilter.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {severityFilter.length}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Row 2: Date Filter + Sort + Actions */}
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDateFilter('all')}
+                  className={`px-3 py-1.5 text-sm rounded-lg ${dateFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  All Time
                 </button>
-            )}
-            {activeTab === 'categories' && (
-                <button onClick={() => setShowCategoryModal(true)} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium w-full md:w-auto justify-center">
-                    <Plus className="w-4 h-4 mr-2" /> Add Category
+                <button
+                  onClick={() => setDateFilter('today')}
+                  className={`px-3 py-1.5 text-sm rounded-lg ${dateFilter === 'today' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  Today
                 </button>
-            )}
-            {activeTab === 'groups' && (
-                <button onClick={() => setShowGroupModal(true)} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium w-full md:w-auto justify-center">
-                    <Plus className="w-4 h-4 mr-2" /> Add Group
+                <button
+                  onClick={() => setDateFilter('7d')}
+                  className={`px-3 py-1.5 text-sm rounded-lg ${dateFilter === '7d' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  Last 7d
                 </button>
-            )}
-            {activeTab === 'audit' && (
-                <button className="flex items-center px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium">
-                    <Download className="w-4 h-4 mr-2" /> Export
+                <button
+                  onClick={() => setDateFilter('30d')}
+                  className={`px-3 py-1.5 text-sm rounded-lg ${dateFilter === '30d' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  Last 30d
                 </button>
-            )}
+              </div>
+
+              <div className="flex gap-2">
+                <select
+                  value={auditSortBy}
+                  onChange={(e) => setAuditSortBy(e.target.value as any)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="timestamp">Sort by Timestamp</option>
+                  <option value="action">Sort by Action</option>
+                  <option value="userName">Sort by User</option>
+                  <option value="severity">Sort by Severity</option>
+                  <option value="category">Sort by Category</option>
+                </select>
+
+                <button
+                  onClick={() => setAuditSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  title={auditSortDir === 'asc' ? 'Ascending' : 'Descending'}
+                >
+                  {auditSortDir === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+
+              {(auditSearch || categoryFilter.length > 0 || severityFilter.length > 0 || dateFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setAuditSearch('');
+                    setCategoryFilter([]);
+                    setSeverityFilter([]);
+                    setDateFilter('all');
+                  }}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg whitespace-nowrap"
+                >
+                  Clear All Filters
+                </button>
+              )}
+
+              <button className="flex items-center px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium ml-auto">
+                <Download className="w-4 h-4 mr-2" /> Export
+              </button>
+            </div>
+          </div>
+
+          <p className="text-sm text-gray-600 mt-3">
+            Showing {filteredAndSortedLogs.length} of {logs.length} audit logs
+          </p>
         </div>
-      </div>
+      )}
+
+      {activeTab === 'categories' && (
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="🔍 Search categories..."
+                value={categoriesSearch}
+                onChange={(e) => setCategoriesSearch(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <select
+                value={categoriesSortBy}
+                onChange={(e) => setCategoriesSortBy(e.target.value as any)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="name">Sort by Name</option>
+                <option value="count">Sort by Newsletter Count</option>
+              </select>
+
+              <button
+                onClick={() => setCategoriesSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                title={categoriesSortDir === 'asc' ? 'Ascending' : 'Descending'}
+              >
+                {categoriesSortDir === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
+
+            {categoriesSearch && (
+              <button
+                onClick={() => setCategoriesSearch('')}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg whitespace-nowrap"
+              >
+                Clear Search
+              </button>
+            )}
+
+            <button
+              onClick={() => setShowCategoryModal(true)}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Category
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-600 mt-3">
+            Showing {filteredAndSortedCategories.length} of {categories.length} categories
+          </p>
+        </div>
+      )}
+
+      {activeTab === 'groups' && (
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="🔍 Search groups..."
+                value={groupsSearch}
+                onChange={(e) => setGroupsSearch(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <select
+                value={groupsSortBy}
+                onChange={(e) => setGroupsSortBy(e.target.value as any)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="name">Sort by Name</option>
+                <option value="recipientCount">Sort by Recipient Count</option>
+              </select>
+
+              <button
+                onClick={() => setGroupsSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                title={groupsSortDir === 'asc' ? 'Ascending' : 'Descending'}
+              >
+                {groupsSortDir === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
+
+            {groupsSearch && (
+              <button
+                onClick={() => setGroupsSearch('')}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg whitespace-nowrap"
+              >
+                Clear Search
+              </button>
+            )}
+
+            <button
+              onClick={() => setShowGroupModal(true)}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Group
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-600 mt-3">
+            Showing {filteredAndSortedGroups.length} of {groups.length} groups
+          </p>
+        </div>
+      )}
 
       {/* Tables */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -267,7 +750,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {users.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
+              {filteredAndSortedUsers.map(user => (
                 <tr key={user.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <div className="flex items-center">
@@ -305,7 +788,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {categories.map(cat => (
+                  {filteredAndSortedCategories.map(cat => (
                     <tr key={cat.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 font-medium text-gray-900">{cat.name}</td>
                       <td className="px-6 py-4 text-gray-500">{cat.count} linked</td>
@@ -328,7 +811,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {groups.map(g => (
+                  {filteredAndSortedGroups.map(g => (
                     <tr key={g.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 font-medium text-gray-900">{g.name}</td>
                       <td className="px-6 py-4 text-gray-500">{g.recipientCount} members</td>
@@ -353,7 +836,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {logs.filter(l => l.action.includes(searchTerm.toUpperCase())).map(log => (
+                    {filteredAndSortedLogs.map(log => (
                         <tr key={log.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 text-gray-500 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td>
                             <td className="px-6 py-4"><span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-md border border-gray-200">{log.action}</span></td>

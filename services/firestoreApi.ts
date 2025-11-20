@@ -15,7 +15,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { db, storage, auth } from './firebase';
 import {
   User,
   UserRole,
@@ -27,6 +27,7 @@ import {
   AuditLogEntry,
   MediaItem,
 } from '../types';
+import * as auditService from './auditService';
 
 // Collection names
 const COLLECTIONS = {
@@ -39,6 +40,28 @@ const COLLECTIONS = {
 } as const;
 
 class FirestoreApiService {
+  // ============================================================================
+  // AUDIT LOGGING HELPERS
+  // ============================================================================
+
+  /**
+   * Get current user context for audit logging
+   */
+  private getCurrentUserContext(): { userId: string; userName: string; userEmail?: string } {
+    const currentUser = auth?.currentUser;
+    if (currentUser) {
+      return {
+        userId: currentUser.uid,
+        userName: currentUser.displayName || currentUser.email || 'Unknown',
+        userEmail: currentUser.email || undefined,
+      };
+    }
+    return {
+      userId: 'SYSTEM',
+      userName: 'SYSTEM',
+    };
+  }
+
   // ============================================================================
   // USER AUTHENTICATION & MANAGEMENT
   // ============================================================================
@@ -238,6 +261,62 @@ class FirestoreApiService {
   }
 
   /**
+   * Validate status workflow transition
+   */
+  private validateStatusTransition(
+    currentStatus: NewsletterStatus | undefined,
+    newStatus: NewsletterStatus
+  ): void {
+    // New newsletter - any status is OK
+    if (!currentStatus) return;
+
+    // SENT newsletters are immutable - cannot change status or edit
+    if (currentStatus === NewsletterStatus.SENT) {
+      throw new Error(
+        'Cannot modify a sent newsletter. Sent newsletters are immutable.'
+      );
+    }
+
+    // SENDING newsletters should only transition to SENT
+    if (currentStatus === NewsletterStatus.SENDING && newStatus !== NewsletterStatus.SENT) {
+      throw new Error(
+        'Cannot modify newsletter while sending is in progress. Please wait for sending to complete.'
+      );
+    }
+
+    // Validate allowed transitions
+    const allowedTransitions: Record<NewsletterStatus, NewsletterStatus[]> = {
+      [NewsletterStatus.DRAFT]: [
+        NewsletterStatus.DRAFT,
+        NewsletterStatus.SCHEDULED,
+        NewsletterStatus.SENT,
+        NewsletterStatus.PAUSED,
+      ],
+      [NewsletterStatus.SCHEDULED]: [
+        NewsletterStatus.DRAFT,
+        NewsletterStatus.SCHEDULED,
+        NewsletterStatus.SENDING,
+        NewsletterStatus.SENT,
+        NewsletterStatus.PAUSED,
+      ],
+      [NewsletterStatus.SENDING]: [NewsletterStatus.SENT],
+      [NewsletterStatus.SENT]: [], // Immutable
+      [NewsletterStatus.PAUSED]: [
+        NewsletterStatus.DRAFT,
+        NewsletterStatus.SCHEDULED,
+        NewsletterStatus.PAUSED,
+      ],
+    };
+
+    const allowed = allowedTransitions[currentStatus] || [];
+    if (!allowed.includes(newStatus)) {
+      throw new Error(
+        `Invalid status transition: Cannot change from ${currentStatus} to ${newStatus}`
+      );
+    }
+  }
+
+  /**
    * Save newsletter (create or update)
    */
   async saveNewsletter(newsletter: Newsletter): Promise<Newsletter> {
@@ -245,6 +324,21 @@ class FirestoreApiService {
 
     const newsletterRef = doc(db, COLLECTIONS.NEWSLETTERS, newsletter.id);
     const newsletterSnap = await getDoc(newsletterRef);
+    const isUpdate = newsletterSnap.exists();
+    const existingData = isUpdate ? newsletterSnap.data() : null;
+
+    // Validate status transition if updating existing newsletter
+    if (isUpdate && existingData) {
+      const currentStatus = existingData.status as NewsletterStatus;
+
+      // Validate the status transition
+      this.validateStatusTransition(currentStatus, newsletter.status);
+
+      // Additional validation: Cannot edit content of SENT newsletters
+      if (currentStatus === NewsletterStatus.SENT) {
+        throw new Error('Cannot edit sent newsletters');
+      }
+    }
 
     const dataToSave = {
       subject: newsletter.subject,
@@ -253,12 +347,12 @@ class FirestoreApiService {
       recipientGroupIds: newsletter.recipientGroupIds,
       status: newsletter.status,
       stats: newsletter.stats || { sent: 0, opened: 0, clicked: 0, bounced: 0 },
-      scheduledAt: newsletter.scheduledAt ? new Date(newsletter.scheduledAt) : null,
-      sentAt: newsletter.sentAt ? new Date(newsletter.sentAt) : null,
+      scheduledAt: newsletter.scheduledAt ? Timestamp.fromDate(new Date(newsletter.scheduledAt)) : null,
+      sentAt: newsletter.sentAt ? Timestamp.fromDate(new Date(newsletter.sentAt)) : null,
       updatedAt: serverTimestamp(),
     };
 
-    if (newsletterSnap.exists()) {
+    if (isUpdate) {
       // Update existing
       await updateDoc(newsletterRef, dataToSave);
     } else {
@@ -267,6 +361,48 @@ class FirestoreApiService {
         ...dataToSave,
         createdAt: serverTimestamp(),
       });
+    }
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+
+    if (isUpdate && existingData) {
+      // Log update
+      await auditService.logNewsletterUpdated({
+        ...userContext,
+        newsletterId: newsletter.id,
+        subject: newsletter.subject,
+        previousStatus: existingData.status,
+        newStatus: newsletter.status,
+      });
+
+      // Log scheduling if status changed to SCHEDULED
+      if (newsletter.status === NewsletterStatus.SCHEDULED && newsletter.scheduledAt) {
+        await auditService.logNewsletterScheduled({
+          ...userContext,
+          newsletterId: newsletter.id,
+          subject: newsletter.subject,
+          scheduledAt: newsletter.scheduledAt,
+        });
+      }
+    } else {
+      // Log create
+      await auditService.logNewsletterCreated({
+        ...userContext,
+        newsletterId: newsletter.id,
+        subject: newsletter.subject,
+        categoryId: newsletter.categoryId,
+      });
+
+      // Log scheduling if created as SCHEDULED
+      if (newsletter.status === NewsletterStatus.SCHEDULED && newsletter.scheduledAt) {
+        await auditService.logNewsletterScheduled({
+          ...userContext,
+          newsletterId: newsletter.id,
+          subject: newsletter.subject,
+          scheduledAt: newsletter.scheduledAt,
+        });
+      }
     }
 
     return newsletter;
@@ -278,8 +414,23 @@ class FirestoreApiService {
   async deleteNewsletter(id: string): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
 
+    // Get newsletter data before deleting for audit log
     const newsletterRef = doc(db, COLLECTIONS.NEWSLETTERS, id);
+    const newsletterSnap = await getDoc(newsletterRef);
+    const newsletterData = newsletterSnap.exists() ? newsletterSnap.data() : null;
+
     await deleteDoc(newsletterRef);
+
+    // Audit logging
+    if (newsletterData) {
+      const userContext = this.getCurrentUserContext();
+      await auditService.logNewsletterDeleted({
+        ...userContext,
+        newsletterId: id,
+        subject: newsletterData.subject || 'Unknown',
+        status: newsletterData.status || 'Unknown',
+      });
+    }
   }
 
   // ============================================================================
@@ -314,7 +465,17 @@ class FirestoreApiService {
       createdAt: serverTimestamp(),
     });
 
-    return { id: docRef.id, name, count: 0 };
+    const newCategory = { id: docRef.id, name, count: 0 };
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+    await auditService.logCategoryCreated({
+      ...userContext,
+      categoryId: newCategory.id,
+      categoryName: name,
+    });
+
+    return newCategory;
   }
 
   /**
@@ -323,8 +484,22 @@ class FirestoreApiService {
   async deleteCategory(id: string): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
 
+    // Get category data before deleting for audit log
     const categoryRef = doc(db, COLLECTIONS.CATEGORIES, id);
+    const categorySnap = await getDoc(categoryRef);
+    const categoryData = categorySnap.exists() ? categorySnap.data() : null;
+
     await deleteDoc(categoryRef);
+
+    // Audit logging
+    if (categoryData) {
+      const userContext = this.getCurrentUserContext();
+      await auditService.logCategoryDeleted({
+        ...userContext,
+        categoryId: id,
+        categoryName: categoryData.name || 'Unknown',
+      });
+    }
   }
 
   // ============================================================================
@@ -383,7 +558,17 @@ class FirestoreApiService {
       createdAt: serverTimestamp(),
     });
 
-    return { id: docRef.id, name, recipientCount: 0, recipients: [] };
+    const newGroup = { id: docRef.id, name, recipientCount: 0, recipients: [] };
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+    await auditService.logGroupCreated({
+      ...userContext,
+      groupId: newGroup.id,
+      groupName: name,
+    });
+
+    return newGroup;
   }
 
   /**
@@ -393,6 +578,10 @@ class FirestoreApiService {
     if (!db) throw new Error('Firestore not initialized');
 
     const groupRef = doc(db, COLLECTIONS.RECIPIENT_GROUPS, id);
+
+    // Get group data before deleting for audit log
+    const groupSnap = await getDoc(groupRef);
+    const groupData = groupSnap.exists() ? groupSnap.data() : null;
 
     // Delete all recipients in subcollection first
     const recipientsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS, id, 'recipients');
@@ -406,6 +595,17 @@ class FirestoreApiService {
 
     // Delete the group
     await deleteDoc(groupRef);
+
+    // Audit logging
+    if (groupData) {
+      const userContext = this.getCurrentUserContext();
+      await auditService.logGroupDeleted({
+        ...userContext,
+        groupId: id,
+        groupName: groupData.name || 'Unknown',
+        recipientCount: recipientsSnapshot.size,
+      });
+    }
   }
 
   /**
@@ -441,6 +641,15 @@ class FirestoreApiService {
     // Update recipient count
     await updateDoc(groupRef, {
       recipientCount: recipients.length,
+    });
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+    await auditService.logRecipientAdded({
+      ...userContext,
+      groupId: groupId,
+      groupName: groupSnap.data().name,
+      recipientEmail: recipient.email,
     });
 
     return {
@@ -496,6 +705,15 @@ class FirestoreApiService {
     };
 
     const docRef = await addDoc(mediaRef, mediaItem);
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+    await auditService.logMediaUploaded({
+      ...userContext,
+      mediaId: docRef.id,
+      fileName: file.name,
+      fileSize: mediaItem.size,
+    });
 
     return {
       id: docRef.id,

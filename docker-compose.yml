@@ -13,7 +13,7 @@ services:
         VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
     container_name: newsletter-platform
     ports:
-      - "8080:80"
+      - "8080:8080"
     restart: unless-stopped
     networks:
       - newsletter-network

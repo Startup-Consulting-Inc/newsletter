@@ -34,8 +34,19 @@ export const trackOpenFunction = functions
       const userAgent = req.headers['user-agent'] || '';
       const ip = req.ip || (req.headers['x-forwarded-for'] as string) || '';
 
+      // Check if already tracked
+      const trackingRef = db.collection('tracking');
+      const q = trackingRef
+        .where('newsletterId', '==', String(newsletterId))
+        .where('recipientId', '==', String(recipientId))
+        .where('eventType', '==', 'open')
+        .limit(1);
+
+      const snapshot = await q.get();
+      const isUnique = snapshot.empty;
+
       // Log tracking event
-      await db.collection('tracking').add({
+      await trackingRef.add({
         newsletterId: String(newsletterId),
         recipientId: String(recipientId),
         recipientEmail: '', // Would need to fetch from recipient doc
@@ -46,12 +57,18 @@ export const trackOpenFunction = functions
       });
 
       // Increment newsletter open count
+      const updateData: any = {
+        'stats.opened': admin.firestore.FieldValue.increment(1),
+      };
+
+      if (isUnique) {
+        updateData['stats.uniqueOpened'] = admin.firestore.FieldValue.increment(1);
+      }
+
       await db
         .collection('newsletters')
         .doc(String(newsletterId))
-        .update({
-          'stats.opened': admin.firestore.FieldValue.increment(1),
-        });
+        .update(updateData);
 
       // Log audit event with metadata
       await logEmailOpened({
@@ -62,7 +79,7 @@ export const trackOpenFunction = functions
         ip,
       });
 
-      console.log(`📊 Tracked open: newsletter=${newsletterId}, recipient=${recipientId}`);
+      console.log(`📊 Tracked open: newsletter=${newsletterId}, recipient=${recipientId}, unique=${isUnique}`);
 
       // Return tracking pixel
       res.set('Content-Type', 'image/gif');
@@ -96,8 +113,19 @@ export const trackClickFunction = functions
       const ip = req.ip || (req.headers['x-forwarded-for'] as string) || '';
       const decodedUrl = decodeURIComponent(String(originalUrl));
 
+      // Check if already tracked
+      const trackingRef = db.collection('tracking');
+      const q = trackingRef
+        .where('newsletterId', '==', String(newsletterId))
+        .where('recipientId', '==', String(recipientId))
+        .where('eventType', '==', 'click')
+        .limit(1);
+
+      const snapshot = await q.get();
+      const isUnique = snapshot.empty;
+
       // Log tracking event
-      await db.collection('tracking').add({
+      await trackingRef.add({
         newsletterId: String(newsletterId),
         recipientId: String(recipientId),
         recipientEmail: '', // Would need to fetch from recipient doc
@@ -109,12 +137,18 @@ export const trackClickFunction = functions
       });
 
       // Increment newsletter click count
+      const updateData: any = {
+        'stats.clicked': admin.firestore.FieldValue.increment(1),
+      };
+
+      if (isUnique) {
+        updateData['stats.uniqueClicked'] = admin.firestore.FieldValue.increment(1);
+      }
+
       await db
         .collection('newsletters')
         .doc(String(newsletterId))
-        .update({
-          'stats.clicked': admin.firestore.FieldValue.increment(1),
-        });
+        .update(updateData);
 
       // Log audit event with metadata
       await logEmailClicked({
@@ -126,7 +160,7 @@ export const trackClickFunction = functions
         ip,
       });
 
-      console.log(`🖱️  Tracked click: newsletter=${newsletterId}, recipient=${recipientId}, url=${originalUrl}`);
+      console.log(`🖱️  Tracked click: newsletter=${newsletterId}, recipient=${recipientId}, url=${originalUrl}, unique=${isUnique}`);
 
       // Redirect to original URL
       res.redirect(302, decodeURIComponent(String(originalUrl)));

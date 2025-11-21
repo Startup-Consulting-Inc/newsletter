@@ -346,7 +346,7 @@ class FirestoreApiService {
       categoryId: newsletter.categoryId,
       recipientGroupIds: newsletter.recipientGroupIds,
       status: newsletter.status,
-      stats: newsletter.stats || { sent: 0, opened: 0, clicked: 0, bounced: 0 },
+      stats: newsletter.stats || { sent: 0, opened: 0, uniqueOpened: 0, clicked: 0, uniqueClicked: 0, bounced: 0 },
       scheduledAt: newsletter.scheduledAt ? Timestamp.fromDate(new Date(newsletter.scheduledAt)) : null,
       sentAt: newsletter.sentAt ? Timestamp.fromDate(new Date(newsletter.sentAt)) : null,
       updatedAt: serverTimestamp(),
@@ -406,6 +406,100 @@ class FirestoreApiService {
     }
 
     return newsletter;
+  }
+
+  /**
+   * Duplicate newsletter
+   */
+  async duplicateNewsletter(id: string): Promise<Newsletter> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    // Get original newsletter
+    const original = await this.getNewsletter(id);
+    if (!original) {
+      throw new Error('Newsletter not found');
+    }
+
+    // Create new newsletter object
+    const newslettersRef = collection(db, COLLECTIONS.NEWSLETTERS);
+
+    const newNewsletterData = {
+      subject: `Copy of ${original.subject}`,
+      htmlContent: original.htmlContent,
+      categoryId: original.categoryId,
+      recipientGroupIds: [], // Reset recipients for safety
+      status: NewsletterStatus.DRAFT,
+      stats: { sent: 0, opened: 0, uniqueOpened: 0, clicked: 0, uniqueClicked: 0, bounced: 0 },
+      scheduledAt: null,
+      sentAt: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(newslettersRef, newNewsletterData);
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+    await auditService.logNewsletterCreated({
+      ...userContext,
+      newsletterId: docRef.id,
+      subject: newNewsletterData.subject,
+      categoryId: newNewsletterData.categoryId,
+    });
+
+    return {
+      id: docRef.id,
+      ...newNewsletterData,
+      // Convert timestamps for return value
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      scheduledAt: undefined,
+      sentAt: undefined,
+    } as Newsletter;
+  }
+
+  /**
+   * Get tracking logs for a newsletter with resolved emails
+   */
+  async getNewsletterTrackingLogs(newsletterId: string): Promise<any[]> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    // 1. Fetch tracking logs
+    const trackingRef = collection(db, 'tracking');
+    const q = query(trackingRef, where('newsletterId', '==', newsletterId), orderBy('timestamp', 'desc'));
+    const trackingSnapshot = await getDocs(q);
+
+    if (trackingSnapshot.empty) {
+      return [];
+    }
+
+    // 2. Fetch newsletter to get recipient groups
+    const newsletter = await this.getNewsletter(newsletterId);
+    if (!newsletter) return [];
+
+    // 3. Fetch all recipients from groups to build an ID -> Email map
+    const recipientMap = new Map<string, string>();
+
+    for (const groupId of newsletter.recipientGroupIds) {
+      const recipientsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS, groupId, 'recipients');
+      const recipientsSnapshot = await getDocs(recipientsRef);
+
+      recipientsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        recipientMap.set(doc.id, data.email);
+      });
+    }
+
+    // 4. Join data
+    return trackingSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        recipientEmail: recipientMap.get(data.recipientId) || 'Unknown Recipient',
+        timestamp: this.timestampToISO(data.timestamp),
+      };
+    });
   }
 
   /**

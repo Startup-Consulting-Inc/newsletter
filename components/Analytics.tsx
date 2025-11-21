@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
-import { Newsletter, NewsletterStatus } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Newsletter, NewsletterStatus, TrackingLog } from '../types';
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, TrendingDown, Mail, MousePointer, AlertCircle, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Mail, MousePointer, AlertCircle, BarChart3, Eye, X, ExternalLink } from 'lucide-react';
+import { api } from '../services';
 
 interface AnalyticsProps {
   newsletters: Newsletter[];
@@ -40,6 +41,28 @@ const COLORS = {
 };
 
 export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
+  const [selectedNewsletterId, setSelectedNewsletterId] = useState<string | null>(null);
+  const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
+  const handleViewDetails = async (newsletterId: string) => {
+    setSelectedNewsletterId(newsletterId);
+    setIsLoadingLogs(true);
+    try {
+      const logs = await api.getNewsletterTrackingLogs(newsletterId);
+      setTrackingLogs(logs);
+    } catch (error) {
+      console.error('Failed to fetch tracking logs:', error);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  const closeDetails = () => {
+    setSelectedNewsletterId(null);
+    setTrackingLogs([]);
+  };
+
   const stats: AggregatedStats = useMemo(() => {
     // Calculate aggregated statistics
     const sentNewsletters = newsletters.filter(n => n.stats && n.stats.sent > 0);
@@ -49,9 +72,13 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
     const totalClicked = sentNewsletters.reduce((sum, n) => sum + (n.stats?.clicked || 0), 0);
     const totalBounced = sentNewsletters.reduce((sum, n) => sum + (n.stats?.bounced || 0), 0);
 
-    const openRate = totalSent > 0 ? (totalOpened / totalSent) * 100 : 0;
-    const clickRate = totalSent > 0 ? (totalClicked / totalSent) * 100 : 0;
-    const clickToOpenRate = totalOpened > 0 ? (totalClicked / totalOpened) * 100 : 0;
+    // Calculate unique totals for rates
+    const totalUniqueOpened = sentNewsletters.reduce((sum, n) => sum + (n.stats?.uniqueOpened || n.stats?.opened || 0), 0);
+    const totalUniqueClicked = sentNewsletters.reduce((sum, n) => sum + (n.stats?.uniqueClicked || n.stats?.clicked || 0), 0);
+
+    const openRate = totalSent > 0 ? (totalUniqueOpened / totalSent) * 100 : 0;
+    const clickRate = totalSent > 0 ? (totalUniqueClicked / totalSent) * 100 : 0;
+    const clickToOpenRate = totalUniqueOpened > 0 ? (totalUniqueClicked / totalUniqueOpened) * 100 : 0;
     const bounceRate = totalSent > 0 ? (totalBounced / totalSent) * 100 : 0;
 
     // Status breakdown
@@ -79,13 +106,19 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
 
     // Top performers
     const topPerformers = sentNewsletters
-      .map(n => ({
-        id: n.id,
-        subject: n.subject,
-        sent: n.stats?.sent || 0,
-        openRate: n.stats?.sent ? ((n.stats?.opened || 0) / n.stats.sent) * 100 : 0,
-        clickRate: n.stats?.sent ? ((n.stats?.clicked || 0) / n.stats.sent) * 100 : 0,
-      }))
+      .map(n => {
+        const sent = n.stats?.sent || 0;
+        const uniqueOpened = n.stats?.uniqueOpened || n.stats?.opened || 0;
+        const uniqueClicked = n.stats?.uniqueClicked || n.stats?.clicked || 0;
+
+        return {
+          id: n.id,
+          subject: n.subject,
+          sent,
+          openRate: sent > 0 ? (uniqueOpened / sent) * 100 : 0,
+          clickRate: sent > 0 ? (uniqueClicked / sent) * 100 : 0,
+        };
+      })
       .sort((a, b) => b.openRate - a.openRate)
       .slice(0, 5);
 
@@ -96,10 +129,13 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
       .slice(-7)
       .map(n => {
         const sent = n.stats?.sent || 0;
+        const uniqueOpened = n.stats?.uniqueOpened || n.stats?.opened || 0;
+        const uniqueClicked = n.stats?.uniqueClicked || n.stats?.clicked || 0;
+
         return {
           date: new Date(n.sentAt!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          openRate: sent > 0 ? ((n.stats?.opened || 0) / sent) * 100 : 0,
-          clickRate: sent > 0 ? ((n.stats?.clicked || 0) / sent) * 100 : 0,
+          openRate: sent > 0 ? (uniqueOpened / sent) * 100 : 0,
+          clickRate: sent > 0 ? (uniqueClicked / sent) * 100 : 0,
         };
       });
 
@@ -159,7 +195,73 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Tracking Details Modal */}
+      {selectedNewsletterId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-gray-900">
+                Activity Details
+              </h3>
+              <button onClick={closeDetails} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {isLoadingLogs ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : trackingLogs.length > 0 ? (
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left">
+                      <th className="py-3 px-4 text-sm font-medium text-gray-500 uppercase">Recipient</th>
+                      <th className="py-3 px-4 text-sm font-medium text-gray-500 uppercase">Action</th>
+                      <th className="py-3 px-4 text-sm font-medium text-gray-500 uppercase">Time</th>
+                      <th className="py-3 px-4 text-sm font-medium text-gray-500 uppercase">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trackingLogs.map((log) => (
+                      <tr key={log.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-4 text-sm text-gray-900 font-medium">
+                          {log.recipientEmail}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${log.eventType === 'open'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-green-100 text-green-800'
+                            }`}>
+                            {log.eventType === 'open' ? 'Opened' : 'Clicked'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-500">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-500 truncate max-w-xs">
+                          {log.linkUrl && (
+                            <a href={log.linkUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center">
+                              Link <ExternalLink className="w-3 h-3 ml-1" />
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  No activity recorded yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Analytics Overview</h1>
         <div className="text-sm text-gray-500">
@@ -275,6 +377,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-500 uppercase">Sent</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-500 uppercase">Open Rate</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-500 uppercase">Click Rate</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -302,6 +405,15 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                         {newsletter.clickRate.toFixed(1)}%
                       </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        onClick={() => handleViewDetails(newsletter.id)}
+                        className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-50 transition-colors"
+                        title="View Details"
+                      >
+                        <Eye className="w-5 h-5" />
+                      </button>
                     </td>
                   </tr>
                 ))}

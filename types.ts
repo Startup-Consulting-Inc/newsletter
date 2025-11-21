@@ -54,7 +54,9 @@ export interface Newsletter {
   stats?: {
     sent: number;
     opened: number;
+    uniqueOpened?: number;
     clicked: number;
+    uniqueClicked?: number;
     bounced: number;
   };
   updatedAt: string;
@@ -203,4 +205,16 @@ export interface MediaItem {
   name: string;
   size: string;
   dimensions: string;
+}
+
+export interface TrackingLog {
+  id: string;
+  newsletterId: string;
+  recipientId: string;
+  recipientEmail: string; // Resolved from recipientId
+  eventType: 'open' | 'click';
+  linkUrl?: string;
+  timestamp: string;
+  userAgent?: string;
+  ipAddress?: string;
 }

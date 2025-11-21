@@ -46,7 +46,7 @@ update_secret() {
 
   if gcloud secrets describe "$SECRET_NAME" --project="$PROJECT_ID" &>/dev/null; then
     echo -e "${BLUE}📝 Updating secret: $SECRET_NAME${NC}"
-    echo "$SECRET_VALUE" | gcloud secrets versions add "$SECRET_NAME" \
+    printf "%s" "$SECRET_VALUE" | gcloud secrets versions add "$SECRET_NAME" \
       --project="$PROJECT_ID" \
       --data-file=-
 
@@ -56,7 +56,7 @@ update_secret() {
   else
     echo -e "${YELLOW}⚠️  Secret $SECRET_NAME doesn't exist yet${NC}"
     echo -e "${BLUE}   Creating new secret: $SECRET_NAME${NC}"
-    echo "$SECRET_VALUE" | gcloud secrets create "$SECRET_NAME" \
+    printf "%s" "$SECRET_VALUE" | gcloud secrets create "$SECRET_NAME" \
       --project="$PROJECT_ID" \
       --data-file=- \
       --replication-policy="automatic"

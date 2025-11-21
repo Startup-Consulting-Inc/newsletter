@@ -9,7 +9,27 @@ import { User, Newsletter, NewsletterStatus } from './types';
 import { api, isDatabaseSeeded, seedFirestoreData } from './services';
 import { auth } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { Plus, BarChart3 } from 'lucide-react';
+import {
+  LayoutDashboard,
+  PenTool,
+  Users,
+  Settings,
+  LogOut,
+  Plus,
+  Search,
+  Filter,
+  MoreVertical,
+  ChevronDown,
+  Loader2,
+  Mail,
+  Calendar,
+  BarChart3,
+  Copy,
+  Trash2,
+  Download,
+  FileCode,
+  FileText
+} from 'lucide-react';
 import { logUserLogin, logUserLogout } from './services/auditService';
 
 export default function App() {
@@ -53,9 +73,9 @@ export default function App() {
 
   useEffect(() => {
     if (!auth) {
-       console.error("Auth not initialized. Check firebase configuration.");
-       setIsLoading(false);
-       return;
+      console.error("Auth not initialized. Check firebase configuration.");
+      setIsLoading(false);
+      return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -63,10 +83,10 @@ export default function App() {
         try {
           // Sync with Firestore - pass Firebase UID as document ID
           const appUser = await api.syncFirebaseUser(
-              firebaseUser.uid,
-              firebaseUser.email || '',
-              firebaseUser.displayName || 'User',
-              firebaseUser.photoURL
+            firebaseUser.uid,
+            firebaseUser.email || '',
+            firebaseUser.displayName || 'User',
+            firebaseUser.photoURL
           );
           setUser(appUser);
           setActiveTab('dashboard');
@@ -95,30 +115,30 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
-  
+
   useEffect(() => {
     if (user) {
-        api.getNewsletters().then(setNewsletters);
+      api.getNewsletters().then(setNewsletters);
     }
   }, [user, activeTab, isEditorOpen]);
 
   const handleSignOut = async () => {
     if (auth && user) {
-        // Log user logout with session duration
-        const sessionDuration = sessionStartTime
-          ? Math.round((Date.now() - sessionStartTime) / 1000) // seconds
-          : undefined;
+      // Log user logout with session duration
+      const sessionDuration = sessionStartTime
+        ? Math.round((Date.now() - sessionStartTime) / 1000) // seconds
+        : undefined;
 
-        await logUserLogout({
-          userId: user.id,
-          userName: user.name,
-          userEmail: user.email,
-          sessionDuration,
-        });
+      await logUserLogout({
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        sessionDuration,
+      });
 
-        await signOut(auth);
-        setUser(null);
-        setSessionStartTime(null);
+      await signOut(auth);
+      setUser(null);
+      setSessionStartTime(null);
     }
   };
 
@@ -128,13 +148,118 @@ export default function App() {
   };
 
   const handleSaveNewsletter = () => {
-      setIsEditorOpen(false);
-      setEditingNewsletter(undefined);
-      api.getNewsletters().then(setNewsletters);
+    setIsEditorOpen(false);
+    setEditingNewsletter(undefined);
+    api.getNewsletters().then(setNewsletters);
+  };
+
+  const handleDuplicateNewsletter = async (newsletter: Newsletter) => {
+    if (window.confirm(`Are you sure you want to duplicate "${newsletter.subject}"?`)) {
+      try {
+        setIsLoading(true);
+        await api.duplicateNewsletter(newsletter.id);
+        const updatedList = await api.getNewsletters();
+        setNewsletters(updatedList);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Failed to duplicate newsletter:", error);
+        setIsLoading(false);
+        alert("Failed to duplicate newsletter. Please try again.");
+      }
+    }
+  };
+
+  const handleDeleteNewsletter = async (e: React.MouseEvent, newsletter: Newsletter) => {
+    e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete "${newsletter.subject}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await api.deleteNewsletter(newsletter.id);
+      // Refresh list
+      const updatedNewsletters = await api.getNewsletters();
+      setNewsletters(updatedNewsletters);
+    } catch (error) {
+      console.error('Failed to delete newsletter:', error);
+      alert('Failed to delete newsletter. Please try again.');
+    }
+  };
+
+  const handleDownloadHTML = (newsletter: Newsletter) => {
+    const element = document.createElement("a");
+    const file = new Blob([newsletter.htmlContent], { type: 'text/html' });
+    element.href = URL.createObjectURL(file);
+    element.download = `${newsletter.subject.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.html`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const handleDownloadPDF = (newsletter: Newsletter) => {
+    // Create a hidden iframe
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    // Write content to the iframe
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(`
+        <html>
+          <head>
+            <title>${newsletter.subject}</title>
+            <style>
+              body {
+                font-family: system-ui, -apple-system, sans-serif;
+                line-height: 1.5;
+                color: #333;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+              }
+              img {
+                max-width: 100%;
+                height: auto;
+              }
+              @media print {
+                * {
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                body {
+                  background-color: white; /* Fallback */
+                }
+              }
+            </style>
+          </head>
+          <body>
+            ${newsletter.htmlContent}
+          </body>
+        </html>
+      `);
+      doc.close();
+
+      // Wait for images to load then print
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (e) {
+          console.error('Print failed', e);
+        } finally {
+          // Remove iframe after a delay to ensure print dialog has opened
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 1000);
+        }
+      };
+    }
   };
 
   const handleUpdateUser = (updatedUser: User) => {
-      setUser(updatedUser);
+    setUser(updatedUser);
   };
 
   // Filter and sort newsletters
@@ -182,11 +307,11 @@ export default function App() {
   }, [newsletters, searchTerm, statusFilter, sortBy, sortDirection]);
 
   if (isLoading) {
-      return (
-          <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-      );
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
   }
 
   if (!user) {
@@ -196,8 +321,8 @@ export default function App() {
   const renderContent = () => {
     if (isEditorOpen) {
       return (
-        <NewsletterEditor 
-          newsletter={editingNewsletter} 
+        <NewsletterEditor
+          newsletter={editingNewsletter}
           onSave={handleSaveNewsletter}
           onCancel={() => setIsEditorOpen(false)}
         />
@@ -207,25 +332,25 @@ export default function App() {
     switch (activeTab) {
       case 'admin':
         return <AdminPanel currentUser={user} />;
-      
+
       case 'profile':
         return <ProfilePage user={user} onUpdateUser={handleUpdateUser} />;
-      
+
       case 'newsletters':
         return (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-               <div>
-                 <h1 className="text-2xl font-bold text-gray-900">Newsletters</h1>
-                 <p className="text-gray-500">Create, manage and send your internal communications.</p>
-               </div>
-               <button 
-                 onClick={() => handleEditNewsletter()}
-                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium flex items-center"
-               >
-                 <Plus className="w-4 h-4 mr-2" />
-                 Create New
-               </button>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Newsletters</h1>
+                <p className="text-gray-500">Create, manage and send your internal communications.</p>
+              </div>
+              <button
+                onClick={() => handleEditNewsletter()}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium flex items-center"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create New
+              </button>
             </div>
 
             {/* Filter and Sort Controls */}
@@ -311,47 +436,93 @@ export default function App() {
             </div>
 
             <div className="grid gap-4">
-               {filteredAndSortedNewsletters.map(n => (
-                 <div key={n.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center hover:border-blue-300 transition-all">
-                    <div>
-                       <h3 className="text-lg font-semibold text-gray-800 mb-1">{n.subject}</h3>
-                       <div className="flex items-center space-x-4 text-sm text-gray-500">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            n.status === 'Sent' ? 'bg-green-100 text-green-800' :
-                            n.status === 'Scheduled' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {n.status}
-                          </span>
-                          <span>
-                            {n.status === 'Scheduled' && n.scheduledAt
-                              ? `Scheduled for: ${new Date(n.scheduledAt).toLocaleString()}`
-                              : n.status === 'Sent' && n.sentAt
-                              ? `Sent: ${new Date(n.sentAt).toLocaleString()}`
-                              : `Updated: ${new Date(n.updatedAt).toLocaleDateString()}`}
-                          </span>
-                          {n.stats && (
-                            <span className="flex items-center text-gray-400">
-                               <BarChart3 className="w-3 h-3 mr-1" />
-                               {n.stats.opened} opens
-                            </span>
-                          )}
-                       </div>
+              {filteredAndSortedNewsletters.map(n => (
+                <div key={n.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center hover:border-blue-300 transition-all">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800 mb-1">{n.subject}</h3>
+                    <div className="flex items-center space-x-4 text-sm text-gray-500">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${n.status === 'Sent' ? 'bg-green-100 text-green-800' :
+                        n.status === 'Scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                        {n.status}
+                      </span>
+                      <span>
+                        {n.status === 'Scheduled' && n.scheduledAt
+                          ? `Scheduled for: ${new Date(n.scheduledAt).toLocaleString()}`
+                          : n.status === 'Sent' && n.sentAt
+                            ? `Sent: ${new Date(n.sentAt).toLocaleString()}`
+                            : `Updated: ${new Date(n.updatedAt).toLocaleDateString()}`}
+                      </span>
+                      {n.stats && (
+                        <span className="flex items-center text-gray-400">
+                          <BarChart3 className="w-3 h-3 mr-1" />
+                          {n.stats.opened} opens
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-2">
-                        <button onClick={() => handleEditNewsletter(n)} className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg font-medium">
-                            Edit
-                        </button>
-                    </div>
-                 </div>
-               ))}
-               {filteredAndSortedNewsletters.length === 0 && (
-                   <div className="text-center py-12 text-gray-500 bg-white rounded-xl border border-gray-200">
-                       {newsletters.length === 0
-                         ? 'No newsletters found. Create one to get started!'
-                         : 'No newsletters match your filters. Try adjusting your search or filters.'}
-                   </div>
-               )}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditNewsletter(n);
+                      }}
+                      className="text-sm font-medium text-blue-600 hover:text-blue-800 px-3 py-1 rounded-md hover:bg-blue-50 transition-colors"
+                    >
+                      {n.status === NewsletterStatus.SENT ? 'View' : 'Edit'}
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicateNewsletter(n);
+                      }}
+                      className="p-1 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors"
+                      title="Duplicate"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadHTML(n);
+                      }}
+                      className="p-1 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors"
+                      title="Download HTML"
+                    >
+                      <FileCode className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadPDF(n);
+                      }}
+                      className="p-1 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors"
+                      title="Download PDF"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={(e) => handleDeleteNewsletter(e, n)}
+                      className="p-1 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {filteredAndSortedNewsletters.length === 0 && (
+                <div className="text-center py-12 text-gray-500 bg-white rounded-xl border border-gray-200">
+                  {newsletters.length === 0
+                    ? 'No newsletters found. Create one to get started!'
+                    : 'No newsletters match your filters. Try adjusting your search or filters.'}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -362,43 +533,43 @@ export default function App() {
       default:
         return (
           <div className="space-y-6">
-             <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="col-span-full bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-lg">
-                    <h2 className="text-2xl font-bold mb-2">Welcome back, {user.name}!</h2>
-                    <p className="text-blue-100 mb-6 max-w-2xl">You have 2 scheduled newsletters for this week. The engagement on "Q3 Recap" is trending up.</p>
-                    <button onClick={() => handleEditNewsletter()} className="bg-white text-blue-700 px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-50 transition-colors">
-                        Draft New Newsletter
-                    </button>
-                </div>
+            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="col-span-full bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-lg">
+                <h2 className="text-2xl font-bold mb-2">Welcome back, {user.name}!</h2>
+                <p className="text-blue-100 mb-6 max-w-2xl">You have 2 scheduled newsletters for this week. The engagement on "Q3 Recap" is trending up.</p>
+                <button onClick={() => handleEditNewsletter()} className="bg-white text-blue-700 px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-50 transition-colors">
+                  Draft New Newsletter
+                </button>
+              </div>
 
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <h3 className="font-semibold text-gray-800 mb-4">Quick Stats</h3>
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Drafts</span>
-                            <span className="font-medium bg-gray-100 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Draft').length}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Scheduled</span>
-                            <span className="font-medium bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Scheduled').length}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Sent (This Month)</span>
-                            <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Sent').length}</span>
-                        </div>
-                    </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 className="font-semibold text-gray-800 mb-4">Quick Stats</h3>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Drafts</span>
+                    <span className="font-medium bg-gray-100 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Draft').length}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Scheduled</span>
+                    <span className="font-medium bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Scheduled').length}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Sent (This Month)</span>
+                    <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Sent').length}</span>
+                  </div>
                 </div>
-             </div>
+              </div>
+            </div>
           </div>
         );
     }
   };
 
   return (
-    <Layout 
-      currentUser={user} 
-      onLogout={handleSignOut} 
+    <Layout
+      currentUser={user}
+      onLogout={handleSignOut}
       activeTab={activeTab}
       onNavigate={setActiveTab}
       onOpenSettings={() => setActiveTab('profile')}

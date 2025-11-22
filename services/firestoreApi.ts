@@ -24,6 +24,7 @@ import {
   Category,
   RecipientGroup,
   Recipient,
+  UnsubscribedUser,
   AuditLogEntry,
   MediaItem,
 } from '../types';
@@ -355,12 +356,23 @@ class FirestoreApiService {
     if (isUpdate) {
       // Update existing
       await updateDoc(newsletterRef, dataToSave);
+
+      // Track category change if category was changed
+      if (existingData && existingData.categoryId !== newsletter.categoryId) {
+        // Decrement old category count
+        await this.updateCategoryCount(existingData.categoryId, false);
+        // Increment new category count
+        await this.updateCategoryCount(newsletter.categoryId, true);
+      }
     } else {
       // Create new
       await setDoc(newsletterRef, {
         ...dataToSave,
         createdAt: serverTimestamp(),
       });
+
+      // Increment category count for new newsletter
+      await this.updateCategoryCount(newsletter.categoryId, true);
     }
 
     // Audit logging
@@ -438,6 +450,9 @@ class FirestoreApiService {
 
     const docRef = await addDoc(newslettersRef, newNewsletterData);
 
+    // Increment category count for duplicated newsletter
+    await this.updateCategoryCount(newNewsletterData.categoryId, true);
+
     // Audit logging
     const userContext = this.getCurrentUserContext();
     await auditService.logNewsletterCreated({
@@ -514,6 +529,11 @@ class FirestoreApiService {
     const newsletterData = newsletterSnap.exists() ? newsletterSnap.data() : null;
 
     await deleteDoc(newsletterRef);
+
+    // Decrement category count
+    if (newsletterData && newsletterData.categoryId) {
+      await this.updateCategoryCount(newsletterData.categoryId, false);
+    }
 
     // Audit logging
     if (newsletterData) {
@@ -594,6 +614,80 @@ class FirestoreApiService {
         categoryName: categoryData.name || 'Unknown',
       });
     }
+  }
+
+  /**
+   * Update category count (increment or decrement)
+   * @private
+   */
+  private async updateCategoryCount(categoryId: string, increment: boolean): Promise<void> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const categoryRef = doc(db, COLLECTIONS.CATEGORIES, categoryId);
+    const categorySnap = await getDoc(categoryRef);
+
+    if (!categorySnap.exists()) {
+      console.warn(`Category ${categoryId} not found, skipping count update`);
+      return;
+    }
+
+    const currentCount = categorySnap.data().count || 0;
+    const newCount = increment
+      ? currentCount + 1
+      : Math.max(0, currentCount - 1); // Prevent negative counts
+
+    await updateDoc(categoryRef, {
+      count: newCount,
+    });
+  }
+
+  /**
+   * Recalculate all category counts based on actual newsletter data
+   */
+  async recalculateCategoryCounts(): Promise<{ updated: number; categories: Record<string, number> }> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    // Get all newsletters
+    const newslettersRef = collection(db, COLLECTIONS.NEWSLETTERS);
+    const newslettersSnapshot = await getDocs(newslettersRef);
+
+    // Count newsletters per category
+    const counts: Record<string, number> = {};
+    newslettersSnapshot.docs.forEach((doc) => {
+      const newsletter = doc.data();
+      const categoryId = newsletter.categoryId;
+      if (categoryId) {
+        counts[categoryId] = (counts[categoryId] || 0) + 1;
+      }
+    });
+
+    // Get all categories
+    const categoriesRef = collection(db, COLLECTIONS.CATEGORIES);
+    const categoriesSnapshot = await getDocs(categoriesRef);
+
+    // Update each category's count
+    const batch = writeBatch(db);
+    let updated = 0;
+
+    categoriesSnapshot.docs.forEach((categoryDoc) => {
+      const categoryId = categoryDoc.id;
+      const actualCount = counts[categoryId] || 0;
+      const currentCount = categoryDoc.data().count || 0;
+
+      if (actualCount !== currentCount) {
+        batch.update(categoryDoc.ref, { count: actualCount });
+        updated++;
+      }
+
+      // Ensure all categories are in the result
+      if (!(categoryId in counts)) {
+        counts[categoryId] = 0;
+      }
+    });
+
+    await batch.commit();
+
+    return { updated, categories: counts };
   }
 
   // ============================================================================
@@ -752,6 +846,210 @@ class FirestoreApiService {
       recipientCount: recipients.length,
       recipients,
     };
+  }
+
+  /**
+   * Duplicate recipient group
+   */
+  async duplicateGroup(id: string): Promise<RecipientGroup> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    // Get original group
+    const originalGroupRef = doc(db, COLLECTIONS.RECIPIENT_GROUPS, id);
+    const originalGroupSnap = await getDoc(originalGroupRef);
+
+    if (!originalGroupSnap.exists()) {
+      throw new Error('Group not found');
+    }
+
+    const originalGroupData = originalGroupSnap.data();
+
+    // Get all recipients from original group
+    const recipientsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS, id, 'recipients');
+    const recipientsSnapshot = await getDocs(recipientsRef);
+    const originalRecipients = recipientsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Recipient[];
+
+    // Create new group with "Copy of" prefix
+    const newGroupName = `Copy of ${originalGroupData.name}`;
+    const groupsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS);
+    const newGroupRef = await addDoc(groupsRef, {
+      name: newGroupName,
+      recipientCount: originalRecipients.length,
+      createdAt: serverTimestamp(),
+    });
+
+    // Copy all recipients to new group's subcollection
+    const newRecipientsRef = collection(
+      db,
+      COLLECTIONS.RECIPIENT_GROUPS,
+      newGroupRef.id,
+      'recipients'
+    );
+
+    // Use batch for efficient copying
+    const batch = writeBatch(db);
+    originalRecipients.forEach((recipient) => {
+      const newRecipientRef = doc(newRecipientsRef);
+      batch.set(newRecipientRef, {
+        email: recipient.email,
+        firstName: recipient.firstName,
+        lastName: recipient.lastName,
+        addedAt: serverTimestamp(),
+      });
+    });
+    await batch.commit();
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+    await auditService.logGroupDuplicated({
+      ...userContext,
+      originalGroupId: id,
+      originalGroupName: originalGroupData.name,
+      newGroupId: newGroupRef.id,
+      newGroupName: newGroupName,
+      recipientCount: originalRecipients.length,
+    });
+
+    return {
+      id: newGroupRef.id,
+      name: newGroupName,
+      recipientCount: originalRecipients.length,
+      recipients: originalRecipients,
+    };
+  }
+
+  /**
+   * Delete recipient from group
+   */
+  async deleteRecipient(groupId: string, recipientId: string): Promise<void> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const groupRef = doc(db, COLLECTIONS.RECIPIENT_GROUPS, groupId);
+    const groupSnap = await getDoc(groupRef);
+
+    if (!groupSnap.exists()) {
+      throw new Error('Group not found');
+    }
+
+    // Get recipient data before deleting for audit log
+    const recipientRef = doc(
+      db,
+      COLLECTIONS.RECIPIENT_GROUPS,
+      groupId,
+      'recipients',
+      recipientId
+    );
+    const recipientSnap = await getDoc(recipientRef);
+    const recipientData = recipientSnap.exists() ? recipientSnap.data() : null;
+
+    // Delete recipient from subcollection
+    await deleteDoc(recipientRef);
+
+    // Update recipient count
+    const groupData = groupSnap.data();
+    const newCount = Math.max(0, (groupData.recipientCount || 0) - 1);
+    await updateDoc(groupRef, {
+      recipientCount: newCount,
+    });
+
+    // Audit logging
+    if (recipientData) {
+      const userContext = this.getCurrentUserContext();
+      await auditService.logRecipientRemoved({
+        ...userContext,
+        groupId: groupId,
+        groupName: groupData.name,
+        recipientEmail: recipientData.email,
+      });
+    }
+  }
+
+  /**
+   * Update recipient in group
+   */
+  async updateRecipient(
+    groupId: string,
+    recipientId: string,
+    data: Partial<Omit<Recipient, 'id'>>
+  ): Promise<Recipient> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const groupRef = doc(db, COLLECTIONS.RECIPIENT_GROUPS, groupId);
+    const groupSnap = await getDoc(groupRef);
+
+    if (!groupSnap.exists()) {
+      throw new Error('Group not found');
+    }
+
+    const recipientRef = doc(
+      db,
+      COLLECTIONS.RECIPIENT_GROUPS,
+      groupId,
+      'recipients',
+      recipientId
+    );
+
+    // Get previous data for audit log
+    const recipientSnap = await getDoc(recipientRef);
+    if (!recipientSnap.exists()) {
+      throw new Error('Recipient not found');
+    }
+    const previousData = recipientSnap.data();
+
+    // Update recipient
+    await updateDoc(recipientRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+
+    // Get updated data
+    const updatedSnap = await getDoc(recipientRef);
+    const updatedData = updatedSnap.data();
+
+    // Audit logging
+    const userContext = this.getCurrentUserContext();
+    await auditService.logRecipientUpdated({
+      ...userContext,
+      groupId: groupId,
+      groupName: groupSnap.data().name,
+      recipientId: recipientId,
+      recipientEmail: updatedData?.email || previousData.email,
+      previousValue: previousData,
+      newValue: updatedData,
+    });
+
+    return {
+      id: recipientId,
+      ...updatedData,
+    } as Recipient;
+  }
+
+  /**
+   * Get all unsubscribed users
+   */
+  async getUnsubscribedUsers(): Promise<UnsubscribedUser[]> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const unsubscribesRef = collection(db, 'unsubscribes');
+    const snapshot = await getDocs(unsubscribesRef);
+
+    return snapshot.docs.map((doc) => ({
+      email: doc.id,
+      ...doc.data(),
+    })) as UnsubscribedUser[];
+  }
+
+  /**
+   * Check if an email is unsubscribed
+   */
+  async isUnsubscribed(email: string): Promise<boolean> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const unsubscribeDoc = await getDoc(doc(db, 'unsubscribes', email));
+    return unsubscribeDoc.exists();
   }
 
   // ============================================================================

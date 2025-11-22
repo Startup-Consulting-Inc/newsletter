@@ -441,6 +441,82 @@ export async function logRecipientImported(params: {
   });
 }
 
+export async function logGroupDuplicated(params: {
+  userId: string;
+  userName: string;
+  originalGroupId: string;
+  originalGroupName: string;
+  newGroupId: string;
+  newGroupName: string;
+  recipientCount: number;
+}) {
+  await logAuditEvent({
+    action: AuditAction.GROUP_DUPLICATED,
+    category: AuditCategory.GROUP,
+    severity: 'INFO',
+    userId: params.userId,
+    userName: params.userName,
+    targetType: 'Group',
+    targetId: params.newGroupId,
+    targetName: params.newGroupName,
+    details: {
+      originalGroupId: params.originalGroupId,
+      originalGroupName: params.originalGroupName,
+      recipientCount: params.recipientCount,
+    },
+  });
+}
+
+export async function logRecipientRemoved(params: {
+  userId: string;
+  userName: string;
+  groupId: string;
+  groupName: string;
+  recipientEmail: string;
+}) {
+  await logAuditEvent({
+    action: AuditAction.RECIPIENT_REMOVED,
+    category: AuditCategory.RECIPIENT,
+    severity: 'WARNING',
+    userId: params.userId,
+    userName: params.userName,
+    targetType: 'Recipient',
+    targetName: params.recipientEmail,
+    details: {
+      groupId: params.groupId,
+      groupName: params.groupName,
+    },
+  });
+}
+
+export async function logRecipientUpdated(params: {
+  userId: string;
+  userName: string;
+  groupId: string;
+  groupName: string;
+  recipientId: string;
+  recipientEmail: string;
+  previousValue?: any;
+  newValue?: any;
+}) {
+  await logAuditEvent({
+    action: AuditAction.RECIPIENT_UPDATED,
+    category: AuditCategory.RECIPIENT,
+    severity: 'INFO',
+    userId: params.userId,
+    userName: params.userName,
+    targetType: 'Recipient',
+    targetId: params.recipientId,
+    targetName: params.recipientEmail,
+    details: {
+      groupId: params.groupId,
+      groupName: params.groupName,
+      previousValue: params.previousValue,
+      newValue: params.newValue,
+    },
+  });
+}
+
 // ============================================================================
 // MEDIA LOGGING
 // ============================================================================

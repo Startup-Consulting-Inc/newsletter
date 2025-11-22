@@ -6,6 +6,7 @@
  * - scheduledNewsletters: Scheduled function to process scheduled newsletters
  * - trackOpen: HTTP endpoint for tracking email opens
  * - trackClick: HTTP endpoint for tracking link clicks
+ * - unsubscribe: HTTP endpoint for handling email unsubscribe requests
  *
  * Environment variables are provided by Google Cloud Secret Manager
  * via firebase.json secretEnvironment configuration
@@ -20,3 +21,4 @@ admin.initializeApp();
 export { sendNewsletterFunction } from './sendNewsletter';
 export { scheduledNewslettersFunction } from './scheduledNewsletters';
 export { trackOpenFunction, trackClickFunction } from './tracking';
+export { unsubscribeFunction as unsubscribe } from './unsubscribe';

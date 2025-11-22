@@ -9,12 +9,19 @@ A comprehensive internal newsletter management system built with React, Vite, an
 - **Status Tracking**: Manage newsletters through Draft, Scheduled, Sending, Sent, and Paused states.
 - **Scheduling**: Schedule newsletters to be sent at specific dates and times.
 - **Duplication**: Easily duplicate existing newsletters to use as templates.
+- **Category Organization**: Organize newsletters with categories and auto-updating usage counts.
 - **Global Delete**: Delete newsletters at any stage (Draft, Scheduled, Sent) to maintain a clean workspace.
 - **Download**: Export newsletters as HTML or PDF files for offline viewing or archiving.
+
+### Recipient Management
+- **Group Operations**: Create, organize, and **duplicate** recipient groups.
+- **Recipient Control**: Add, **edit**, and **delete** individual recipients within groups.
+- **Unsubscribe System**: Automated unsubscribe handling with import protection.
 
 ### Analytics & Tracking
 - **Dashboard**: Visual overview of newsletter performance with charts and key metrics.
 - **Detailed Metrics**: Track open rates, click rates, and bounce rates.
+- **Smart Link Tracking**: Accurate tracking of clicked links with support for special protocols.
 - **Individual Tracking**: View detailed logs of who opened and clicked links in each newsletter.
 - **Trend Analysis**: Monitor performance trends over time.
 
@@ -116,6 +123,34 @@ The project is configured for automated deployment using Google Cloud Build and 
 
 - **Firestore Rules**: Data access is secured using `firestore.rules` to ensure users can only access authorized data.
 - **Environment Variables**: Sensitive configuration is managed via `.env` files and Cloud Build secrets.
+
+## 🔄 Recent Updates
+
+### Unsubscribe Functionality
+- Implemented `unsubscribe` Cloud Function with HTTP endpoint.
+- Added `UnsubscribedUser` interface and API methods (`getUnsubscribedUsers`, `isUnsubscribed`).
+- Updated Firestore rules for `unsubscribes` collection.
+- Added import protection in Admin Panel to prevent re-importing unsubscribed users.
+
+### Link Tracking Improvements
+- Fixed a bug in `wrapLinksWithTracking()` where non-anchor tags were being tracked.
+- Improved regex to only match `<a>` tags.
+- Added handling for edge cases like `#`, `javascript:`, `mailto:`, and `tel:` links.
+
+### Email Tracking
+- Verified full implementation of the tracking system.
+- Added missing Firestore composite indexes for the `tracking` collection to fix Analytics view.
+
+### Category Management
+- Fixed an issue where "X linked" counts for categories were not updating.
+- Implemented `updateCategoryCount()` helper and `recalculateCategoryCounts()` utility.
+- Updated newsletter operations (save, delete, duplicate) to automatically maintain category counts.
+- Added "Recalculate Counts" button in Admin Panel.
+
+### Recipient Group Features
+- Added ability to **Clone/Duplicate** recipient groups.
+- Added **Edit** and **Delete** functionality for individual recipients within the Manage Group modal.
+- Updated Audit Logging to track `GROUP_DUPLICATED` and `RECIPIENT_UPDATED` actions.
 
 ## 📄 License
 

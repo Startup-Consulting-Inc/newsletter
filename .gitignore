@@ -50,3 +50,7 @@ ui-debug.log
 functions/node_modules
 functions/.env
 functions/lib
+
+# Documentation
+*.md
+!README.md

@@ -42,6 +42,15 @@ export interface RecipientGroup {
   recipients?: Recipient[]; // Optional for list view, populated in detail view
 }
 
+export interface UnsubscribedUser {
+  email: string;
+  recipientId: string;
+  unsubscribedAt: string;
+  groupIds: string[];
+  userAgent?: string;
+  ipAddress?: string;
+}
+
 export interface Newsletter {
   id: string;
   subject: string;
@@ -100,8 +109,10 @@ export enum AuditAction {
   // Group & Recipient Management
   GROUP_CREATED = 'GROUP_CREATED',
   GROUP_DELETED = 'GROUP_DELETED',
+  GROUP_DUPLICATED = 'GROUP_DUPLICATED',
   RECIPIENT_ADDED = 'RECIPIENT_ADDED',
   RECIPIENT_IMPORTED = 'RECIPIENT_IMPORTED',
+  RECIPIENT_UPDATED = 'RECIPIENT_UPDATED',
   RECIPIENT_REMOVED = 'RECIPIENT_REMOVED',
   RECIPIENT_UNSUBSCRIBED = 'RECIPIENT_UNSUBSCRIBED',
 

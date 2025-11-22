@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, AuditLogEntry, Category, RecipientGroup, Recipient, AuditCategory, AuditSeverity } from '../types';
 import { api } from '../services';
-import { Plus, Search, Trash2, Edit, Download, X, Upload, Users as UsersIcon, List } from 'lucide-react';
+import { Plus, Search, Trash2, Edit, Download, X, Upload, Users as UsersIcon, List, Copy, Save, Check } from 'lucide-react';
 
 interface AdminPanelProps {
   currentUser: User;
@@ -52,6 +52,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   const [groupName, setGroupName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<RecipientGroup | null>(null);
   const [recipientData, setRecipientData] = useState({ email: '', firstName: '', lastName: '' });
+  const [editingRecipient, setEditingRecipient] = useState<Recipient | null>(null);
+  const [editData, setEditData] = useState<Partial<Recipient>>({});
 
   const loadData = async () => {
     if (activeTab === 'users' && isSiteAdmin) setUsers(await api.getUsers());
@@ -262,6 +264,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
     }
   };
 
+  const handleRecalculateCounts = async () => {
+    if (confirm('Recalculate all category counts based on actual newsletter data?')) {
+      const result = await api.recalculateCategoryCounts();
+      alert(`Successfully updated ${result.updated} categories.\n\nCounts:\n${Object.entries(result.categories).map(([id, count]) => `${id}: ${count}`).join('\n')}`);
+      loadData();
+    }
+  };
+
   // Group Actions
   const handleAddGroup = async () => {
     if (!groupName) return;
@@ -278,8 +288,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
       }
   };
 
+  const handleDuplicateGroup = async (id: string) => {
+      if (confirm('Duplicate this group with all recipients?')) {
+          await api.duplicateGroup(id);
+          loadData();
+      }
+  };
+
   const handleAddRecipient = async () => {
       if (!selectedGroup || !recipientData.email) return;
+
+      // Check if email is unsubscribed
+      const isUnsubscribed = await api.isUnsubscribed(recipientData.email);
+      if (isUnsubscribed) {
+          alert(`Cannot add ${recipientData.email} - this email is unsubscribed.`);
+          return;
+      }
+
       await api.addRecipient(selectedGroup.id, recipientData);
       setRecipientData({ email: '', firstName: '', lastName: '' });
       // Refresh groups to get updated count, ideally we'd fetch just the group
@@ -340,6 +365,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (email && emailRegex.test(email)) {
                 try {
+                    // Check if email is unsubscribed
+                    const isUnsubscribed = await api.isUnsubscribed(email);
+                    if (isUnsubscribed) {
+                        failCount++;
+                        errors.push(`Row ${i+1}: ${email} is unsubscribed`);
+                        continue;
+                    }
+
                     await api.addRecipient(selectedGroup.id, { email, firstName, lastName });
                     successCount++;
                 } catch (err) {
@@ -376,6 +409,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
       };
 
       reader.readAsText(file);
+  };
+
+  const handleDeleteRecipient = async (recipientId: string) => {
+      if (!selectedGroup || !confirm('Delete this recipient?')) return;
+      await api.deleteRecipient(selectedGroup.id, recipientId);
+      // Refresh groups
+      const groups = await api.getGroups();
+      setGroups(groups);
+      setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
+  };
+
+  const handleEditRecipient = (recipient: Recipient) => {
+      setEditingRecipient(recipient);
+      setEditData({
+          email: recipient.email,
+          firstName: recipient.firstName,
+          lastName: recipient.lastName,
+      });
+  };
+
+  const handleSaveRecipient = async () => {
+      if (!selectedGroup || !editingRecipient) return;
+      await api.updateRecipient(selectedGroup.id, editingRecipient.id, editData);
+      // Refresh groups
+      const groups = await api.getGroups();
+      setGroups(groups);
+      setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
+      setEditingRecipient(null);
+      setEditData({});
+  };
+
+  const handleCancelEdit = () => {
+      setEditingRecipient(null);
+      setEditData({});
   };
 
   const renderTabs = () => {
@@ -669,6 +736,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
             )}
 
             <button
+              onClick={handleRecalculateCounts}
+              className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium whitespace-nowrap"
+              title="Recalculate category counts based on actual newsletter data"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Recalculate Counts
+            </button>
+
+            <button
               onClick={() => setShowCategoryModal(true)}
               className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium whitespace-nowrap"
             >
@@ -817,7 +895,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                       <td className="px-6 py-4 text-gray-500">{g.recipientCount} members</td>
                       <td className="px-6 py-4 text-right space-x-2">
                          <button onClick={() => { setSelectedGroup(g); setShowRecipientModal(true); }} className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2">Manage Recipients</button>
-                         <button onClick={() => handleDeleteGroup(g.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                         <button onClick={() => handleDuplicateGroup(g.id)} className="text-gray-400 hover:text-blue-600" title="Duplicate group"><Copy className="w-4 h-4" /></button>
+                         <button onClick={() => handleDeleteGroup(g.id)} className="text-gray-400 hover:text-red-600" title="Delete group"><Trash2 className="w-4 h-4" /></button>
                       </td>
                     </tr>
                   ))}
@@ -950,17 +1029,81 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
 
                       {/* List (Mocked for now as API doesn't return full list in this view for perf) */}
                       <div>
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Recently Added</h4>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Recipients</h4>
                           <div className="bg-white border border-gray-200 rounded-lg">
                               {selectedGroup.recipients && selectedGroup.recipients.length > 0 ? (
                                   selectedGroup.recipients.map(r => (
                                       <div key={r.id} className="px-4 py-2 border-b last:border-0 flex justify-between items-center text-sm">
-                                          <span className="text-gray-900">{r.email}</span>
-                                          <span className="text-gray-500">{r.firstName} {r.lastName}</span>
+                                          {editingRecipient?.id === r.id ? (
+                                              // Edit mode
+                                              <>
+                                                  <div className="flex gap-2 flex-1">
+                                                      <input
+                                                          type="email"
+                                                          value={editData.email || ''}
+                                                          onChange={(e) => setEditData({...editData, email: e.target.value})}
+                                                          className="px-2 py-1 border rounded text-xs flex-1"
+                                                          placeholder="Email"
+                                                      />
+                                                      <input
+                                                          type="text"
+                                                          value={editData.firstName || ''}
+                                                          onChange={(e) => setEditData({...editData, firstName: e.target.value})}
+                                                          className="px-2 py-1 border rounded text-xs w-32"
+                                                          placeholder="First Name"
+                                                      />
+                                                      <input
+                                                          type="text"
+                                                          value={editData.lastName || ''}
+                                                          onChange={(e) => setEditData({...editData, lastName: e.target.value})}
+                                                          className="px-2 py-1 border rounded text-xs w-32"
+                                                          placeholder="Last Name"
+                                                      />
+                                                  </div>
+                                                  <div className="flex gap-1 ml-2">
+                                                      <button
+                                                          onClick={handleSaveRecipient}
+                                                          className="text-green-600 hover:text-green-800 p-1"
+                                                          title="Save"
+                                                      >
+                                                          <Check className="w-4 h-4" />
+                                                      </button>
+                                                      <button
+                                                          onClick={handleCancelEdit}
+                                                          className="text-gray-400 hover:text-gray-600 p-1"
+                                                          title="Cancel"
+                                                      >
+                                                          <X className="w-4 h-4" />
+                                                      </button>
+                                                  </div>
+                                              </>
+                                          ) : (
+                                              // View mode
+                                              <>
+                                                  <span className="text-gray-900">{r.email}</span>
+                                                  <div className="flex items-center gap-2">
+                                                      <span className="text-gray-500">{r.firstName} {r.lastName}</span>
+                                                      <button
+                                                          onClick={() => handleEditRecipient(r)}
+                                                          className="text-gray-400 hover:text-blue-600 p-1"
+                                                          title="Edit recipient"
+                                                      >
+                                                          <Edit className="w-4 h-4" />
+                                                      </button>
+                                                      <button
+                                                          onClick={() => handleDeleteRecipient(r.id)}
+                                                          className="text-gray-400 hover:text-red-600 p-1"
+                                                          title="Delete recipient"
+                                                      >
+                                                          <Trash2 className="w-4 h-4" />
+                                                      </button>
+                                                  </div>
+                                              </>
+                                          )}
                                       </div>
                                   ))
                               ) : (
-                                  <div className="p-4 text-center text-gray-400 text-sm">No new recipients added in this session.</div>
+                                  <div className="p-4 text-center text-gray-400 text-sm">No recipients in this group.</div>
                               )}
                           </div>
                       </div>

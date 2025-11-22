@@ -82,20 +82,30 @@ function personalizeContent(html: string, recipient: Recipient): string {
 }
 
 /**
- * Wrap all links with click tracking
+ * Wrap all clickable links (<a> tags only) with click tracking
+ * Does NOT wrap <link> tags (stylesheets, fonts, etc.)
  */
 function wrapLinksWithTracking(html: string, newsletterId: string, recipientId: string): string {
   return html.replace(
-    /href="([^"]+)"/g,
+    /<a\s+[^>]*href="([^"]+)"[^>]*>/gi,
     (match, url) => {
-      // Don't track unsubscribe links or tracking URLs
-      if (url.includes('unsubscribe') || url.includes('track')) {
+      // Don't track special link types
+      if (
+        url.includes('unsubscribe') ||
+        url.includes('track') ||
+        url.startsWith('#') ||              // Anchor links (internal page navigation)
+        url.startsWith('javascript:') ||    // JavaScript pseudo-protocol
+        url.startsWith('mailto:') ||        // Email links
+        url.startsWith('tel:')              // Phone links
+      ) {
         return match;
       }
 
       const encodedUrl = encodeURIComponent(url);
       const trackingUrl = `${TRACKING_BASE_URL}/trackClickFunction?nid=${newsletterId}&rid=${recipientId}&url=${encodedUrl}`;
-      return `href="${trackingUrl}"`;
+
+      // Replace only the href attribute, preserve other attributes
+      return match.replace(/href="[^"]+"/, `href="${trackingUrl}"`);
     }
   );
 }

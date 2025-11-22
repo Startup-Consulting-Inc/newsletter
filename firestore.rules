@@ -149,6 +149,19 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // UNSUBSCRIBES COLLECTION
+    // =========================================================================
+
+    match /unsubscribes/{email} {
+      // Only authenticated admin users can read unsubscribe records
+      allow read: if isNewsletterAdmin();
+
+      // Only Cloud Functions can write (create/update/delete)
+      // This is enforced by not having any allow write rules
+      // Cloud Functions have admin SDK access and bypass these rules
+    }
+
+    // =========================================================================
     // NEWSLETTERS COLLECTION
     // =========================================================================
 

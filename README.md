@@ -152,6 +152,14 @@ The project is configured for automated deployment using Google Cloud Build and 
 - Added **Edit** and **Delete** functionality for individual recipients within the Manage Group modal.
 - Updated Audit Logging to track `GROUP_DUPLICATED` and `RECIPIENT_UPDATED` actions.
 
+### Dashboard Redesign
+- **Command Center Layout**: Revamped dashboard to serve as a central hub for action.
+- **Welcome Banner**: Dynamic greeting with scheduled newsletter count.
+- **Needs Attention**: "Scheduled & Upcoming" and "Recent Drafts" sections for quick access.
+- **Performance Card**: Instant view of the last sent newsletter's open and click rates.
+- **Quick Stats**: Real-time count of total subscribers and newsletters sent this month.
+- **Bug Fixes**: Resolved React hooks violation and Firestore audit logging errors.
+
 ## 📄 License
 
 [MIT License](LICENSE)

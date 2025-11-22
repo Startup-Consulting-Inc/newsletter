@@ -42,6 +42,20 @@ export default function App() {
 
   // Dashboard Data
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
+  const [totalRecipients, setTotalRecipients] = useState(0);
+
+  useEffect(() => {
+    const fetchRecipientCount = async () => {
+      try {
+        const groups = await api.getGroups();
+        const count = groups.reduce((acc, group) => acc + (group.recipientCount || 0), 0);
+        setTotalRecipients(count);
+      } catch (error) {
+        console.error('Failed to fetch recipient count:', error);
+      }
+    };
+    fetchRecipientCount();
+  }, [user]);
 
   // Filter and sort state
   const [searchTerm, setSearchTerm] = useState('');
@@ -373,7 +387,7 @@ export default function App() {
                     multiple
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(
-                      Array.from(e.target.selectedOptions, option => option.value as NewsletterStatus)
+                      Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value as NewsletterStatus)
                     )}
                     className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px] h-10"
                     size={1}
@@ -531,32 +545,213 @@ export default function App() {
         return <Analytics newsletters={newsletters} />;
 
       default:
+        // Calculate dashboard metrics
+        const scheduledNewsletters = newsletters.filter(n => n.status === NewsletterStatus.SCHEDULED);
+        const recentDrafts = newsletters
+          .filter(n => n.status === NewsletterStatus.DRAFT)
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .slice(0, 5);
+
+        const lastSentNewsletter = newsletters
+          .filter(n => n.status === NewsletterStatus.SENT)
+          .sort((a, b) => new Date(b.sentAt || 0).getTime() - new Date(a.sentAt || 0).getTime())[0];
+
+        const sentThisMonth = newsletters.filter(n => {
+          if (n.status !== NewsletterStatus.SENT || !n.sentAt) return false;
+          const sentDate = new Date(n.sentAt);
+          const now = new Date();
+          return sentDate.getMonth() === now.getMonth() && sentDate.getFullYear() === now.getFullYear();
+        }).length;
+
         return (
-          <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="col-span-full bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-lg">
-                <h2 className="text-2xl font-bold mb-2">Welcome back, {user.name}!</h2>
-                <p className="text-blue-100 mb-6 max-w-2xl">You have 2 scheduled newsletters for this week. The engagement on "Q3 Recap" is trending up.</p>
-                <button onClick={() => handleEditNewsletter()} className="bg-white text-blue-700 px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-50 transition-colors">
-                  Draft New Newsletter
-                </button>
+          <div className="space-y-8">
+            {/* Welcome Banner */}
+            <div className="bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-400 opacity-10 rounded-full -ml-10 -mb-10 blur-2xl"></div>
+
+              <div className="relative z-10">
+                <h1 className="text-3xl font-bold mb-2">Welcome back, {user.name}!</h1>
+                <p className="text-blue-100 mb-8 max-w-2xl text-lg">
+                  {scheduledNewsletters.length > 0
+                    ? `You have ${scheduledNewsletters.length} scheduled newsletter${scheduledNewsletters.length === 1 ? '' : 's'} coming up.`
+                    : "You're all caught up! No newsletters are currently scheduled."}
+                </p>
+
+                <div className="flex flex-wrap gap-4">
+                  <button
+                    onClick={() => handleEditNewsletter()}
+                    className="bg-white text-blue-700 px-6 py-3 rounded-xl font-semibold hover:bg-blue-50 transition-colors shadow-md flex items-center"
+                  >
+                    <PenTool className="w-5 h-5 mr-2" />
+                    Draft New Newsletter
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('admin')}
+                    className="bg-blue-600 bg-opacity-40 text-white px-6 py-3 rounded-xl font-semibold hover:bg-opacity-50 transition-colors backdrop-blur-sm flex items-center border border-blue-400 border-opacity-30"
+                  >
+                    <Users className="w-5 h-5 mr-2" />
+                    Manage Subscribers
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Left Column: Needs Attention */}
+              <div className="lg:col-span-2 space-y-8">
+                {/* Scheduled Section */}
+                {scheduledNewsletters.length > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-yellow-50">
+                      <h3 className="font-bold text-gray-800 flex items-center">
+                        <Calendar className="w-5 h-5 mr-2 text-yellow-600" />
+                        Scheduled & Upcoming
+                      </h3>
+                      <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded-full">
+                        {scheduledNewsletters.length} Pending
+                      </span>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                      {scheduledNewsletters.map(n => (
+                        <div key={n.id} className="p-5 hover:bg-gray-50 transition-colors flex justify-between items-center group">
+                          <div>
+                            <h4 className="font-semibold text-gray-800 mb-1">{n.subject}</h4>
+                            <p className="text-sm text-gray-500 flex items-center">
+                              Scheduled for {new Date(n.scheduledAt || '').toLocaleString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleEditNewsletter(n)}
+                            className="text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity font-medium text-sm"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Drafts */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800 flex items-center">
+                      <FileText className="w-5 h-5 mr-2 text-gray-500" />
+                      Recent Drafts
+                    </h3>
+                    <button
+                      onClick={() => setActiveTab('newsletters')}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      View All
+                    </button>
+                  </div>
+
+                  {recentDrafts.length > 0 ? (
+                    <div className="divide-y divide-gray-100">
+                      {recentDrafts.map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => handleEditNewsletter(n)}
+                          className="p-5 hover:bg-gray-50 transition-colors cursor-pointer group"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h4 className="font-semibold text-gray-800 mb-1 group-hover:text-blue-600 transition-colors">
+                                {n.subject || '(Untitled Draft)'}
+                              </h4>
+                              <p className="text-sm text-gray-500">
+                                Last updated {new Date(n.updatedAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="bg-gray-100 p-2 rounded-lg group-hover:bg-blue-50 transition-colors">
+                              <PenTool className="w-4 h-4 text-gray-400 group-hover:text-blue-600" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-gray-500">
+                      <p>No active drafts. Start something new!</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <h3 className="font-semibold text-gray-800 mb-4">Quick Stats</h3>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Drafts</span>
-                    <span className="font-medium bg-gray-100 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Draft').length}</span>
+              {/* Right Column: Performance & Stats */}
+              <div className="space-y-8">
+                {/* Last Sent Performance */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 bg-green-50">
+                    <h3 className="font-bold text-gray-800 flex items-center">
+                      <BarChart3 className="w-5 h-5 mr-2 text-green-600" />
+                      Recent Performance
+                    </h3>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Scheduled</span>
-                    <span className="font-medium bg-yellow-100 text-yellow-800 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Scheduled').length}</span>
+
+                  {lastSentNewsletter ? (
+                    <div className="p-6">
+                      <div className="mb-6">
+                        <span className="text-xs font-semibold tracking-wide text-gray-400 uppercase">Last Sent</span>
+                        <h4 className="text-lg font-bold text-gray-900 mt-1 line-clamp-2" title={lastSentNewsletter.subject}>
+                          {lastSentNewsletter.subject}
+                        </h4>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {new Date(lastSentNewsletter.sentAt || '').toLocaleDateString()}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-gray-50 p-4 rounded-xl text-center">
+                          <div className="text-2xl font-bold text-blue-600">
+                            {lastSentNewsletter.stats?.opened || 0}
+                          </div>
+                          <div className="text-xs text-gray-500 font-medium uppercase mt-1">Opens</div>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-xl text-center">
+                          <div className="text-2xl font-bold text-indigo-600">
+                            {lastSentNewsletter.stats?.clicked || 0}
+                          </div>
+                          <div className="text-xs text-gray-500 font-medium uppercase mt-1">Clicks</div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => setActiveTab('analytics')}
+                        className="w-full mt-6 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        View Full Analytics
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-gray-500">
+                      <p>No sent newsletters yet.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Stats Grid */}
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Total Subscribers</p>
+                      <p className="text-2xl font-bold text-gray-900">{totalRecipients.toLocaleString()}</p>
+                    </div>
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <Users className="w-6 h-6 text-blue-600" />
+                    </div>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Sent (This Month)</span>
-                    <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded">{newsletters.filter(n => n.status === 'Sent').length}</span>
+
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Sent This Month</p>
+                      <p className="text-2xl font-bold text-gray-900">{sentThisMonth}</p>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <Mail className="w-6 h-6 text-green-600" />
+                    </div>
                   </div>
                 </div>
               </div>

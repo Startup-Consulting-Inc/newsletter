@@ -87,10 +87,10 @@ export async function logAuditEvent(params: {
       details: params.details,
 
       // Request Information
-      requestMetadata: params.requestMetadata || {
+      requestMetadata: removeUndefined(params.requestMetadata || {
         userAgent: getUserAgent(),
         ip: getClientIP(),
-      },
+      }) as RequestMetadata,
     };
 
     // Remove undefined values before saving to Firestore

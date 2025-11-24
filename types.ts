@@ -1,11 +1,20 @@
 export enum UserRole {
   SITE_ADMIN = 'Site Admin',
-  NEWSLETTER_ADMIN = 'Newsletter Admin',
-  NEWSLETTER_CREATOR = 'Newsletter Creator'
+  COMPANY_ADMIN = 'Company Admin',
+  NEWSLETTER_ADMIN = 'Newsletter Admin'
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  logoUrl?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface User {
   id: string;
+  companyId?: string; // Optional for Site Admin, required for others
   name: string;
   email: string;
   role: UserRole;
@@ -24,6 +33,7 @@ export enum NewsletterStatus {
 
 export interface Category {
   id: string;
+  companyId?: string; // Optional for backward compatibility
   name: string;
   count: number;
 }
@@ -37,6 +47,7 @@ export interface Recipient {
 
 export interface RecipientGroup {
   id: string;
+  companyId?: string; // Optional for backward compatibility
   name: string;
   recipientCount: number;
   recipients?: Recipient[]; // Optional for list view, populated in detail view
@@ -53,6 +64,7 @@ export interface UnsubscribedUser {
 
 export interface Newsletter {
   id: string;
+  companyId?: string; // Optional for backward compatibility
   subject: string;
   status: NewsletterStatus;
   categoryId: string;
@@ -159,6 +171,7 @@ export interface AuditLogEntry {
   // Core Identification
   id: string;
   timestamp: string;
+  companyId?: string; // Optional for system/site-admin logs
 
   // Actor Information
   userId: string;
@@ -212,6 +225,7 @@ export interface AuditLogEntry {
 
 export interface MediaItem {
   id: string;
+  companyId: string;
   url: string;
   name: string;
   size: string;

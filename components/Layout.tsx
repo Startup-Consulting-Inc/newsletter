@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { User, UserRole } from '../types';
-import { 
-  LayoutDashboard, 
-  PenTool, 
-  Users, 
-  FileBarChart, 
-  ShieldAlert, 
-  LogOut, 
-  Menu, 
+import {
+  LayoutDashboard,
+  PenTool,
+  Users,
+  FileBarChart,
+  ShieldAlert,
+  LogOut,
+  Menu,
   X,
   Bell,
   Settings
@@ -27,10 +27,10 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
 
   const getNavItems = () => {
     const items = [
-      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [UserRole.SITE_ADMIN, UserRole.NEWSLETTER_ADMIN, UserRole.NEWSLETTER_CREATOR] },
-      { id: 'newsletters', label: 'Newsletters', icon: PenTool, roles: [UserRole.SITE_ADMIN, UserRole.NEWSLETTER_ADMIN, UserRole.NEWSLETTER_CREATOR] },
-      { id: 'analytics', label: 'Analytics', icon: FileBarChart, roles: [UserRole.SITE_ADMIN, UserRole.NEWSLETTER_ADMIN, UserRole.NEWSLETTER_CREATOR] },
-      { id: 'admin', label: 'Admin Panel', icon: ShieldAlert, roles: [UserRole.SITE_ADMIN, UserRole.NEWSLETTER_ADMIN] },
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [UserRole.SITE_ADMIN, UserRole.NEWSLETTER_ADMIN, UserRole.COMPANY_ADMIN] },
+      { id: 'newsletters', label: 'Newsletter', icon: PenTool, roles: [UserRole.SITE_ADMIN, UserRole.NEWSLETTER_ADMIN, UserRole.COMPANY_ADMIN] },
+      { id: 'analytics', label: 'Analytics', icon: FileBarChart, roles: [UserRole.SITE_ADMIN, UserRole.NEWSLETTER_ADMIN, UserRole.COMPANY_ADMIN] },
+      { id: 'admin', label: 'Admin', icon: ShieldAlert, roles: [UserRole.SITE_ADMIN, UserRole.COMPANY_ADMIN] },
     ];
 
     return items.filter(item => item.roles.includes(currentUser.role));
@@ -52,11 +52,10 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`flex items-center w-full px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                activeTab === item.id 
-                  ? 'bg-blue-600 text-white' 
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
+              className={`flex items-center w-full px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${activeTab === item.id
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
             >
               <item.icon className="w-5 h-5 mr-3" />
               {item.label}
@@ -65,18 +64,18 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <button 
-             onClick={onOpenSettings}
-             className="flex items-center mb-4 px-2 w-full text-left hover:bg-slate-800 rounded-lg p-2 transition-colors group"
-             title="Go to Profile"
+          <button
+            onClick={onOpenSettings}
+            className="flex items-center mb-4 px-2 w-full text-left hover:bg-slate-800 rounded-lg p-2 transition-colors group"
+            title="Go to Profile"
           >
-             <img src={currentUser.avatarUrl || 'https://via.placeholder.com/40'} alt="User" className="w-8 h-8 rounded-full mr-3 border border-slate-600 group-hover:border-slate-400" />
-             <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{currentUser.name}</p>
-                <p className="text-xs text-slate-400 truncate group-hover:text-slate-300">{currentUser.role}</p>
-             </div>
+            <img src={currentUser.avatarUrl || 'https://via.placeholder.com/40'} alt="User" className="w-8 h-8 rounded-full mr-3 border border-slate-600 group-hover:border-slate-400" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate">{currentUser.name}</p>
+              <p className="text-xs text-slate-400 truncate group-hover:text-slate-300">{currentUser.role}</p>
+            </div>
           </button>
-          <button 
+          <button
             onClick={onLogout}
             className="flex items-center w-full px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
           >
@@ -97,23 +96,22 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
               <span className="ml-3 text-lg font-semibold text-gray-900">InNews</span>
             </div>
             <button onClick={onOpenSettings}>
-                <img src={currentUser.avatarUrl} alt="Profile" className="w-8 h-8 rounded-full" />
+              <img src={currentUser.avatarUrl} alt="Profile" className="w-8 h-8 rounded-full" />
             </button>
           </div>
-          
+
           {/* Mobile Nav Dropdown */}
           {isMobileMenuOpen && (
             <div className="px-2 pt-2 pb-3 space-y-1 border-t border-gray-200">
               {navItems.map((item) => (
-                 <button
+                <button
                   key={item.id}
                   onClick={() => {
                     onNavigate(item.id);
                     setIsMobileMenuOpen(false);
                   }}
-                  className={`flex items-center w-full px-3 py-2 text-base font-medium rounded-md ${
-                    activeTab === item.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`flex items-center w-full px-3 py-2 text-base font-medium rounded-md ${activeTab === item.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
                 >
                   <item.icon className="w-5 h-5 mr-3" />
                   {item.label}
@@ -121,17 +119,16 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
               ))}
               <button
                 onClick={() => {
-                    onOpenSettings();
-                    setIsMobileMenuOpen(false);
+                  onOpenSettings();
+                  setIsMobileMenuOpen(false);
                 }}
-                className={`flex items-center w-full px-3 py-2 text-base font-medium rounded-md ${
-                  activeTab === 'profile' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
-                }`}
+                className={`flex items-center w-full px-3 py-2 text-base font-medium rounded-md ${activeTab === 'profile' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
               >
                 <Settings className="w-5 h-5 mr-3" />
                 My Profile
               </button>
-              <button 
+              <button
                 onClick={onLogout}
                 className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md"
               >
@@ -144,18 +141,18 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
 
         {/* Top Bar Desktop */}
         <header className="hidden lg:flex bg-white border-b border-gray-200 h-16 items-center justify-between px-8 shadow-sm z-10">
-           <h2 className="text-xl font-semibold text-gray-800 capitalize">
-             {navItems.find(i => i.id === activeTab)?.label || (activeTab === 'profile' ? 'Profile' : 'Dashboard')}
-           </h2>
-           <div className="flex items-center space-x-4">
-              <button className="p-2 text-gray-400 hover:text-gray-600 relative">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
-              </button>
-              <button onClick={onOpenSettings} className={`p-2 hover:text-gray-600 ${activeTab === 'profile' ? 'text-blue-600' : 'text-gray-400'}`}>
-                <Settings className="w-5 h-5" />
-              </button>
-           </div>
+          <h2 className="text-xl font-semibold text-gray-800 capitalize">
+            {navItems.find(i => i.id === activeTab)?.label || (activeTab === 'profile' ? 'Profile' : 'Dashboard')}
+          </h2>
+          <div className="flex items-center space-x-4">
+            <button className="p-2 text-gray-400 hover:text-gray-600 relative">
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+            </button>
+            <button onClick={onOpenSettings} className={`p-2 hover:text-gray-600 ${activeTab === 'profile' ? 'text-blue-600' : 'text-gray-400'}`}>
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </header>
 
         {/* Main Content */}

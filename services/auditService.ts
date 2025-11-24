@@ -49,6 +49,7 @@ export async function logAuditEvent(params: {
   userName: string;
   userEmail?: string;
   userRole?: UserRole;
+  companyId?: string;
   targetType?: string;
   targetId?: string;
   targetName?: string;
@@ -67,6 +68,7 @@ export async function logAuditEvent(params: {
       userName: params.userName,
       userEmail: params.userEmail,
       userRole: params.userRole,
+      companyId: params.companyId,
 
       // Action Details
       action: params.action,
@@ -116,6 +118,7 @@ export async function logUserLogin(params: {
   userName: string;
   userEmail: string;
   userRole: UserRole;
+  companyId?: string;
   method: string;
 }) {
   await logAuditEvent({
@@ -126,6 +129,7 @@ export async function logUserLogin(params: {
     userName: params.userName,
     userEmail: params.userEmail,
     userRole: params.userRole,
+    companyId: params.companyId,
     details: {
       method: params.method,
     },
@@ -136,6 +140,7 @@ export async function logUserLogout(params: {
   userId: string;
   userName: string;
   userEmail: string;
+  companyId?: string;
   sessionDuration?: number;
 }) {
   await logAuditEvent({
@@ -145,6 +150,7 @@ export async function logUserLogout(params: {
     userId: params.userId,
     userName: params.userName,
     userEmail: params.userEmail,
+    companyId: params.companyId,
     details: {
       sessionDuration: params.sessionDuration,
     },

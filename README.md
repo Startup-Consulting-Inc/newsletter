@@ -7,11 +7,13 @@ A comprehensive internal newsletter management system built with React, Vite, an
 ### Newsletter Management
 - **Create & Edit**: Rich text editor with image support, placeholders, and real-time preview.
 - **Status Tracking**: Manage newsletters through Draft, Scheduled, Sending, Sent, and Paused states.
-- **Scheduling**: Schedule newsletters to be sent at specific dates and times.
+- **Smart Scheduling**: Schedule newsletters with timezone-aware date picker supporting same-day scheduling for future times.
+- **Reliable Operations**: Fixed save/schedule/send workflow ensuring all operations complete before closing the editor.
 - **Duplication**: Easily duplicate existing newsletters to use as templates.
 - **Category Organization**: Organize newsletters with categories and auto-updating usage counts.
 - **Global Delete**: Delete newsletters at any stage (Draft, Scheduled, Sent) to maintain a clean workspace.
 - **Download**: Export newsletters as HTML or PDF files for offline viewing or archiving.
+- **Multi-Tenant Filtering**: Site Admins can filter and view newsletters by company with company name display.
 
 ### Recipient Management
 - **Group Operations**: Create, organize, and **duplicate** recipient groups.
@@ -21,14 +23,25 @@ A comprehensive internal newsletter management system built with React, Vite, an
 ### Analytics & Tracking
 - **Dashboard**: Visual overview of newsletter performance with charts and key metrics.
 - **Detailed Metrics**: Track open rates, click rates, and bounce rates.
+- **Bounce Email Tracking**: Comprehensive bounce reporting with hard/soft bounce categorization, filterable by newsletter, bounce type, and error category.
+- **Bounce Count Badges**: Visual indicators on newsletter cards showing bounced email counts with red alert icons.
+- **CSV Export**: Download bounce reports with email addresses, newsletters, bounce types, categories, error messages, and timestamps.
 - **Smart Link Tracking**: Accurate tracking of clicked links with support for special protocols.
 - **Individual Tracking**: View detailed logs of who opened and clicked links in each newsletter.
 - **Trend Analysis**: Monitor performance trends over time.
+- **Navigation Access**: Analytics accessible to all admin roles (Site Admin, Company Admin, Newsletter Admin).
 
 ### User & Role Management
-- **Authentication**: Secure login via Firebase Authentication.
-- **Role-Based Access**: Admin panel for managing user roles (Admin, Editor, Viewer) and permissions.
-- **Profile Management**: Users can update their profile information.
+
+- **Multi-Tenant Architecture**: Complete company-level data isolation with proper security rules.
+- **Three-Tier Roles**:
+  - **Site Admin**: Manage all companies, users, and system-wide data
+  - **Company Admin**: Manage their company's newsletters, users, categories, and recipient groups
+  - **Newsletter Admin**: Create and manage newsletters for their company
+- **Authentication**: Secure login via Firebase Authentication with Google Sign-In.
+- **User Management**: Site Admins can view and filter users by company and role with company name display.
+- **Company Assignment**: Users are assigned to companies with validation to ensure proper access control.
+- **Profile Management**: Users can update their profile information and view their role permissions.
 
 ## 🛠️ Tech Stack
 
@@ -126,33 +139,169 @@ The project is configured for automated deployment using Google Cloud Build and 
 
 ## 🔄 Recent Updates
 
+### Multi-Tenant Data Isolation & Company Filtering (November 2025)
+
+**Problem Solved**: Users from different companies could see each other's data, breaking tenant isolation.
+
+**Newsletter Editor Multi-Tenant Fix**:
+
+- Fixed critical bug where `NewsletterEditor.tsx` wasn't passing `currentUser.companyId` to API calls
+- Updated `getCategories()`, `getGroups()`, and `getMedia()` calls to properly filter by company
+- Added defensive validation in `firestoreApi.ts` to warn when companyId is missing
+- Added user validation in `App.tsx` to ensure non-Site-Admin users have a valid companyId
+- Prevents users from seeing categories, recipient groups, and media from other companies
+
+**Site Admin Company Filtering - Users Tab**:
+
+- Added company name column to user list in Admin Panel
+- Implemented company filter dropdown (All Companies, Unassigned, or specific company)
+- Filter badge indicator shows when company filter is active
+- Updated `filteredAndSortedUsers` logic to support company-based filtering
+- Clear Filters button resets company filter along with role filter
+
+**Site Admin Company Filtering - Newsletter Tab**:
+
+- Added company name display in newsletter cards for Site Admin
+- Implemented company filter dropdown for newsletters
+- Company names shown alongside newsletter status and dates
+- Filter integrates seamlessly with existing search and status filters
+- Loads company data automatically when Site Admin views Newsletter tab
+- Clear Filters button resets all active filters including company
+
+**Enhanced Debug Logging**:
+
+- Comprehensive console logging in `App.tsx` for newsletter fetching and filtering
+- Logs show: user info, API queries, returned data, filter states, and final results
+- Detailed warnings when no newsletters found or all filtered out
+- Each newsletter shows `matchesUserCompany` flag for debugging
+- Step-by-step filtering logs show exactly where newsletters are removed
+
+### Newsletter Save/Schedule/Send Workflow Fix (November 2025)
+
+**Problem Solved**: Save, Schedule, and Send operations were redirecting to Newsletter page without completing.
+
+**Root Cause**: `onSave()` callback was called synchronously before async operations completed.
+
+**Implementation**:
+
+- Modified `handleSave()` in `NewsletterEditor.tsx` to only call `onSave()` after ALL async operations complete
+- Made `handleScheduleSubmit()` async and properly await save operation before closing modal
+- Fixed `handleSaveNewsletter()` in `App.tsx` to properly await newsletter list refresh
+- Added comprehensive console logging for debugging save operations
+- Error handling prevents closing editor on failures, allowing user to retry
+
+**Result**: Users can now reliably save drafts, schedule newsletters, and send immediately with proper workflow completion.
+
+### Timezone-Aware Newsletter Scheduling (November 2025)
+
+**Problem Solved**: Users couldn't select today's date when scheduling newsletters, even for future times.
+
+**Root Cause**: The `min` attribute on datetime-local input used UTC timezone instead of local timezone.
+
+**Technical Details**:
+
+- Old code: `min={new Date().toISOString().slice(0, 16)}` returned UTC time
+- This caused mismatch with browser's local timezone interpretation
+- Example: 10:00 AM PST became 6:00 PM UTC, blocking valid selections
+
+**Fix**:
+
+- Implemented local timezone calculation for `min` attribute
+- Extracts year, month, day, hours, and minutes in local timezone
+- Formats as `YYYY-MM-DDTHH:mm` for datetime-local input
+- Users can now schedule newsletters for any future time, including later today
+
+**Result**: Same-day scheduling works correctly across all timezones.
+
+### Analytics Navigation Restoration (November 2025)
+
+**Problem Solved**: Analytics link disappeared from sidebar navigation.
+
+**Fix**:
+
+- Restored Analytics navigation item in `Layout.tsx` navigation array
+- Accessible to Site Admin, Company Admin, and Newsletter Admin roles
+- Consistent with other navigation items (Dashboard, Newsletter, Admin)
+
+### Bounce Email Tracking System (November 2025)
+
+**Problem Solved**: No way to view which emails bounced or failed delivery when sending newsletters.
+
+**Implementation**: Complete bounce tracking and reporting system built on existing audit log infrastructure.
+
+**API Layer** (`services/firestoreApi.ts`):
+
+- `getBounces()` method queries audit logs for `EMAIL_BOUNCED` action
+- Filters by newsletterId for newsletter-specific bounce reports
+- `categorizeBounceType()` classifies bounces as hard, soft, or unknown
+- `categorizeBounceReason()` converts raw SMTP errors into user-friendly categories
+
+**Bounce Categories**:
+
+- **Hard Bounces**: Invalid email address, domain doesn't exist, recipient rejected
+- **Soft Bounces**: Mailbox full, temporary failure, connection issues
+- **Unknown**: Other errors that don't fit standard patterns
+
+**User Interface** (`components/BounceReport.tsx`):
+
+- Dedicated "Bounced Emails" tab in Admin Panel (Site Admin and Company Admin only)
+- Stats cards showing: total bounces, hard bounces, soft bounces, filtered count
+- Four-way filtering: search by email/error, newsletter dropdown, bounce type, error category
+- Sortable table with columns: Type (icon + badge), Email, Newsletter, Category, Error Message, Timestamp
+- Visual indicators: red for hard bounces, yellow for soft bounces, gray for unknown
+- CSV export with proper quote escaping for Excel compatibility
+- Empty state handling and loading states
+
+**Dashboard Integration** (`App.tsx`):
+
+- Bounce count badges on newsletter cards with red `AlertCircle` icon
+- Only displays for sent newsletters with bounces (`stats.bounced > 0`)
+- Positioned next to open count for easy performance comparison
+- Visual warning indicator helps identify delivery issues at a glance
+
+**Data Flow**:
+
+1. Email sending failures logged to audit logs via `logEmailBounced()`
+2. Newsletter `stats.bounced` field stores aggregate count
+3. `getBounces()` queries audit logs with action filter
+4. BounceReport component displays with filters and export capability
+5. Dashboard shows bounce count badges for quick visibility
+
+**Result**: Users can now monitor email deliverability, identify problematic email addresses, and export bounce data for cleanup or analysis.
+
 ### Unsubscribe Functionality
+
 - Implemented `unsubscribe` Cloud Function with HTTP endpoint.
 - Added `UnsubscribedUser` interface and API methods (`getUnsubscribedUsers`, `isUnsubscribed`).
 - Updated Firestore rules for `unsubscribes` collection.
 - Added import protection in Admin Panel to prevent re-importing unsubscribed users.
 
 ### Link Tracking Improvements
+
 - Fixed a bug in `wrapLinksWithTracking()` where non-anchor tags were being tracked.
 - Improved regex to only match `<a>` tags.
 - Added handling for edge cases like `#`, `javascript:`, `mailto:`, and `tel:` links.
 
 ### Email Tracking
+
 - Verified full implementation of the tracking system.
 - Added missing Firestore composite indexes for the `tracking` collection to fix Analytics view.
 
 ### Category Management
+
 - Fixed an issue where "X linked" counts for categories were not updating.
 - Implemented `updateCategoryCount()` helper and `recalculateCategoryCounts()` utility.
 - Updated newsletter operations (save, delete, duplicate) to automatically maintain category counts.
 - Added "Recalculate Counts" button in Admin Panel.
 
 ### Recipient Group Features
+
 - Added ability to **Clone/Duplicate** recipient groups.
 - Added **Edit** and **Delete** functionality for individual recipients within the Manage Group modal.
 - Updated Audit Logging to track `GROUP_DUPLICATED` and `RECIPIENT_UPDATED` actions.
 
 ### Dashboard Redesign
+
 - **Command Center Layout**: Revamped dashboard to serve as a central hub for action.
 - **Welcome Banner**: Dynamic greeting with scheduled newsletter count.
 - **Needs Attention**: "Scheduled & Upcoming" and "Recent Drafts" sections for quick access.

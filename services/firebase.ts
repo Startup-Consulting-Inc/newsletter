@@ -59,15 +59,18 @@ let functions: Functions | undefined;
 let googleProvider: GoogleAuthProvider | undefined;
 
 try {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    storage = getStorage(app);
-    functions = getFunctions(app, 'us-central1'); // Same region as Cloud Functions
-    googleProvider = new GoogleAuthProvider();
-    console.log("Firebase initialized successfully (Auth, Firestore, Storage, Functions)");
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
+  functions = getFunctions(app, 'us-central1'); // Same region as Cloud Functions
+  googleProvider = new GoogleAuthProvider();
+  googleProvider.setCustomParameters({
+    prompt: 'select_account'
+  });
+  console.log("Firebase initialized successfully (Auth, Firestore, Storage, Functions)");
 } catch (error) {
-    console.error("Firebase initialization error:", error);
+  console.error("Firebase initialization error:", error);
 }
 
 export { auth, db, storage, functions, googleProvider, firebaseConfig };

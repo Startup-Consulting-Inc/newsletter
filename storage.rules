@@ -26,6 +26,30 @@ service firebase.storage {
     }
 
     // =========================================================================
+    // CONTACT UPLOADS FOLDER - Contact Form Attachments
+    // =========================================================================
+
+    match /contact-uploads/{fileName} {
+      // Anyone can upload attachments for contact forms
+      // Restrictions:
+      // - File size limit: 10MB
+      // - Allowed file types: images (PNG, JPG, JPEG), PDFs, and documents
+      allow write: if request.resource.size < 10 * 1024 * 1024 &&
+                     (request.resource.contentType.matches('image/.*') ||
+                      request.resource.contentType == 'application/pdf' ||
+                      request.resource.contentType.matches('application/vnd.*') ||
+                      request.resource.contentType.matches('application/.*document.*'));
+
+      // Public read access required for getDownloadURL() to work
+      // Security: Download URLs contain unguessable UUIDv4 tokens
+      // Files are only accessible by those with the exact URL
+      allow read: if true;
+
+      // Only authenticated users can delete attachments
+      allow delete: if request.auth != null;
+    }
+
+    // =========================================================================
     // DEFAULT DENY - All Other Paths
     // =========================================================================
 

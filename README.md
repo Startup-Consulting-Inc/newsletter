@@ -139,6 +139,42 @@ The project is configured for automated deployment using Google Cloud Build and 
 
 ## 🔄 Recent Updates
 
+### Contact Form & Legal Pages (November 2025)
+
+**Implementation**: Complete contact form system with legal pages and footer navigation.
+
+**Contact Form**:
+
+- Public contact form accessible from landing page and authenticated sidebar
+- Form fields: inquiry type, name, email, company, role, subject, message
+- File attachment support (images, PDFs, documents up to 10MB)
+- Cloud Function integration for form submission (`submitContactForm`)
+- Immediate redirect to origin page after successful submission
+- Error handling with user-friendly messages
+
+**Legal Pages**:
+
+- **Privacy Policy**: Comprehensive 12-section privacy policy covering data collection, usage, retention, security, user rights, cookies, international transfers, and GDPR compliance
+- **Terms of Service**: Detailed 15-section terms covering service description, acceptable use, email compliance, intellectual property, payment, liability, dispute resolution, and termination policies
+- Professional formatting with sections, subsections, and clear navigation
+- Dynamic last-updated date display
+
+**Footer & Navigation**:
+
+- Footer component on landing page with Privacy, Terms, and Support links
+- Support link in authenticated sidebar (between Profile and Sign Out)
+- Available on both desktop and mobile layouts
+- Consistent navigation experience across authenticated and unauthenticated states
+
+**Security**:
+
+- Firestore rules allow public contact form submissions
+- Storage rules for contact form file attachments
+- Site Admin access to view and manage contact requests
+- Proper data isolation and validation
+
+**Result**: Users can easily contact support, view legal policies, and navigate between pages seamlessly from any location in the application.
+
 ### Multi-Tenant Data Isolation & Company Filtering (November 2025)
 
 **Problem Solved**: Users from different companies could see each other's data, breaking tenant isolation.

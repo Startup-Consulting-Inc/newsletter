@@ -243,3 +243,46 @@ export interface TrackingLog {
   userAgent?: string;
   ipAddress?: string;
 }
+
+// ============================================================================
+// CONTACT REQUEST TYPES
+// ============================================================================
+
+export enum InquiryType {
+  GENERAL = 'GENERAL',
+  SALES = 'SALES',
+  SUPPORT = 'SUPPORT',
+  PARTNERSHIP = 'PARTNERSHIP',
+  PRESS = 'PRESS',
+  QUESTION = 'QUESTION',
+  BUG_REPORT = 'BUG_REPORT',
+  DEMO = 'DEMO',
+  FEATURE_REQUEST = 'FEATURE_REQUEST',
+  OTHER = 'OTHER'
+}
+
+export type ContactRequestStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED';
+
+export interface Attachment {
+  url: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+  path: string; // Storage path
+}
+
+export interface ContactRequest {
+  id: string;              // Auto-generated ID
+  inquiryType: InquiryType;
+  name: string;
+  email: string;
+  company?: string;
+  role?: string;
+  teamSize?: string;
+  subject?: string;
+  message?: string;
+  attachments?: Attachment[];
+  status: ContactRequestStatus;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -15,7 +15,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, auth } from './firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, storage, auth, functions } from './firebase';
 import {
   User,
   UserRole,
@@ -28,6 +29,8 @@ import {
   AuditLogEntry,
   MediaItem,
   Company,
+  ContactRequest,
+  Attachment,
 } from '../types';
 import * as auditService from './auditService';
 
@@ -1460,6 +1463,37 @@ class FirestoreApiService {
     } catch (error) {
       console.error('Failed to log action:', error);
     }
+  }
+
+  // ============================================================================
+  // CONTACT FORM METHODS
+  // ============================================================================
+
+  /**
+   * Submit contact form (calls Cloud Function)
+   */
+  async submitContactForm(data: {
+    inquiryType: string;
+    name: string;
+    email: string;
+    company?: string;
+    role?: string;
+    teamSize?: string;
+    subject?: string;
+    message?: string;
+    attachments?: Attachment[];
+  }): Promise<{ success: boolean; id: string }> {
+    if (!functions) {
+      throw new Error('Firebase Functions not initialized');
+    }
+
+    const submitContactFormFunction = httpsCallable<typeof data, { success: boolean; id: string }>(
+      functions,
+      'submitContactForm'
+    );
+
+    const result = await submitContactFormFunction(data);
+    return result.data;
   }
 
   // ============================================================================

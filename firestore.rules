@@ -222,6 +222,24 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // CONTACT REQUESTS COLLECTION
+    // =========================================================================
+
+    match /contactRequests/{requestId} {
+      // Anyone can create a contact request (public form submission)
+      allow create: if true;
+
+      // Only Site Admins can read contact requests
+      allow read: if isSiteAdmin();
+
+      // Only Site Admins can update status (PENDING -> IN_PROGRESS -> RESOLVED)
+      allow update: if isSiteAdmin();
+
+      // Only Site Admins can delete contact requests
+      allow delete: if isSiteAdmin();
+    }
+
+    // =========================================================================
     // DEFAULT DENY
     // =========================================================================
 

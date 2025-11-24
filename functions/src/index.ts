@@ -23,3 +23,4 @@ export { scheduledNewslettersFunction } from './scheduledNewsletters';
 export { trackOpenFunction, trackClickFunction } from './tracking';
 export { unsubscribeFunction as unsubscribe } from './unsubscribe';
 export { processBounces, triggerBounceCheck } from './bounceHandler';
+export { submitContactForm } from './contact';

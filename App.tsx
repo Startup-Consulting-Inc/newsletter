@@ -5,6 +5,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { ProfilePage } from './components/ProfilePage';
 import { AuthPage } from './components/AuthPage';
 import { Analytics } from './components/Analytics';
+import { LandingPage } from './components/LandingPage';
 import { User, Newsletter, NewsletterStatus, Company, UserRole } from './types';
 import { api, isDatabaseSeeded, seedFirestoreData } from './services';
 import { auth } from './services/firebase';
@@ -41,6 +42,7 @@ export default function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingNewsletter, setEditingNewsletter] = useState<Newsletter | undefined>(undefined);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
+  const [showLogin, setShowLogin] = useState(false);
 
   // Dashboard Data
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
@@ -455,7 +457,10 @@ export default function App() {
   }
 
   if (!user) {
-    return <AuthPage />;
+    if (showLogin) {
+      return <AuthPage />;
+    }
+    return <LandingPage onLogin={() => setShowLogin(true)} />;
   }
 
   const renderContent = () => {

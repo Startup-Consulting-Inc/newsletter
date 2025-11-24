@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
-    "seed": "tsx scripts/seedDatabase.ts",
-    "seed:reset": "tsx scripts/seedDatabase.ts --reset"
+    "seed": "tsx scripts/seed.ts",
+    "seed:reset": "tsx scripts/reset-seed.ts",
+    "clear": "tsx scripts/clear-data.ts"
   },
   "dependencies": {
     "firebase": "^12.6.0",

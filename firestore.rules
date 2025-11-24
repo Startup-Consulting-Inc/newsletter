@@ -4,29 +4,6 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // =========================================================================
-    // DEVELOPMENT MODE (SEEDING SCRIPTS)
-    // =========================================================================
-    // IMPORTANT: Uncomment the rule below ONLY during development when running
-    // seed scripts (npm run seed / npm run seed:reset).
-    //
-    // ⚠️  WARNING: This allows ALL read/write operations without authentication!
-    // ⚠️  Deploy this rule, run your seed script, then IMMEDIATELY comment it
-    //     out and redeploy to restore security.
-    //
-    // Usage:
-    //   1. Uncomment the rule below
-    //   2. Deploy: firebase deploy --only firestore:rules
-    //   3. Run: npm run seed:reset
-    //   4. Comment out the rule again
-    //   5. Deploy: firebase deploy --only firestore:rules
-    // =========================================================================
-
-    // 🔓 DEVELOPMENT: Uncomment to allow seeding (REMOVE BEFORE PRODUCTION!)
-    // match /{document=**} {
-    //   allow read, write: if true;
-    // }
-
-    // =========================================================================
     // HELPER FUNCTIONS
     // =========================================================================
 
@@ -50,16 +27,24 @@ service cloud.firestore {
       return hasRole('Site Admin');
     }
 
-    // Check if user is Newsletter Admin or higher
-    function isNewsletterAdmin() {
-      return isAuthenticated() &&
-        getUserData().role in ['Site Admin', 'Newsletter Admin'];
+    // Check if user is Company Admin
+    function isCompanyAdmin() {
+      return hasRole('Company Admin');
     }
 
-    // Check if user is Newsletter Creator or higher (any authenticated user)
-    function isNewsletterCreator() {
-      return isAuthenticated() &&
-        getUserData().role in ['Site Admin', 'Newsletter Admin', 'Newsletter Creator'];
+    // Check if user is Newsletter Admin
+    function isNewsletterAdmin() {
+      return hasRole('Newsletter Admin');
+    }
+
+    // Check if user belongs to the company of the resource
+    function belongsToCompany(companyId) {
+      return isAuthenticated() && getUserData().companyId == companyId;
+    }
+
+    // Check if user has access to the company data (Site Admin or Company Member)
+    function canAccessCompanyData(companyId) {
+      return isSiteAdmin() || (isAuthenticated() && getUserData().companyId == companyId);
     }
 
     // Validate email format
@@ -68,38 +53,67 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // COMPANIES COLLECTION
+    // =========================================================================
+
+    match /companies/{companyId} {
+      // Site Admins can read all companies
+      // Company Admins and Newsletter Admins can read their own company
+      allow read: if isSiteAdmin() || belongsToCompany(companyId);
+
+      // Only Site Admins can create companies
+      allow create: if isSiteAdmin();
+
+      // Site Admins and Company Admins can update company details
+      allow update: if isSiteAdmin() || (isCompanyAdmin() && belongsToCompany(companyId));
+
+      // Only Site Admins can delete companies
+      allow delete: if isSiteAdmin();
+    }
+
+    // =========================================================================
     // USERS COLLECTION
     // =========================================================================
 
     match /users/{userId} {
-      // Anyone authenticated can read user profiles
-      allow read: if isAuthenticated();
+      // Users can read their own profile
+      // Site Admins can read all profiles
+      // Company Admins can read profiles of users in their company
+      allow read: if isSiteAdmin() || 
+                  (isAuthenticated() && request.auth.uid == userId) ||
+                  (isCompanyAdmin() && getUserData().companyId == resource.data.companyId);
 
-      // Allow self-registration for new users OR Site Admin creating users
+      // Allow self-registration (initial user creation)
+      // Site Admins can create any user
+      // Company Admins can create users for their company
       allow create: if (
-                        // Self-registration: user creating their own profile
+                        // Self-registration
                         isAuthenticated() &&
-                        request.auth.uid == userId &&
-                        request.resource.data.email == request.auth.token.email &&
-                        request.resource.data.keys().hasAll(['name', 'email', 'role']) &&
-                        isValidEmail(request.resource.data.email) &&
-                        // New users can only create as Newsletter Creator
-                        request.resource.data.role == 'Newsletter Creator'
+                        request.auth.uid == userId
                       ) || (
-                        // Site Admin creating users with any role
-                        isSiteAdmin() &&
-                        request.resource.data.keys().hasAll(['name', 'email', 'role']) &&
-                        isValidEmail(request.resource.data.email)
+                        // Site Admin
+                        isSiteAdmin()
+                      ) || (
+                        // Company Admin creating user for their company
+                        isCompanyAdmin() && 
+                        request.resource.data.companyId == getUserData().companyId
                       );
 
-      // Site Admins can update any user, users can update their own profile (except role)
+      // Site Admins can update any user
+      // Company Admins can update users in their company (except changing companyId)
+      // Users can update their own profile (except role and companyId)
       allow update: if isSiteAdmin() ||
+                      (isCompanyAdmin() && 
+                       resource.data.companyId == getUserData().companyId &&
+                       request.resource.data.companyId == getUserData().companyId) ||
                       (isAuthenticated() &&
                        request.auth.uid == userId &&
-                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'companyId']));
 
-      // Only Site Admins can delete users
-      allow delete: if isSiteAdmin();
+      // Site Admins can delete any user
+      // Company Admins can delete users in their company
+      allow delete: if isSiteAdmin() || 
+                      (isCompanyAdmin() && resource.data.companyId == getUserData().companyId);
     }
 
     // =========================================================================
@@ -107,15 +121,18 @@ service cloud.firestore {
     // =========================================================================
 
     match /categories/{categoryId} {
-      // All authenticated users can read categories
-      allow read: if isAuthenticated();
+      // Read: Site Admin or User in same company
+      allow read: if isSiteAdmin() || belongsToCompany(resource.data.companyId);
 
-      // Newsletter Admins and above can create/update categories
-      allow create, update: if isNewsletterAdmin() &&
-                              request.resource.data.keys().hasAll(['name', 'count']);
+      // Create: Site Admin or (Company/Newsletter Admin in same company)
+      allow create: if isSiteAdmin() || 
+                      (isAuthenticated() && 
+                       request.resource.data.companyId == getUserData().companyId);
 
-      // Newsletter Admins and above can delete categories
-      allow delete: if isNewsletterAdmin();
+      // Update/Delete: Site Admin or (Company/Newsletter Admin in same company)
+      allow update, delete: if isSiteAdmin() || 
+                              (isAuthenticated() && 
+                               resource.data.companyId == getUserData().companyId);
     }
 
     // =========================================================================
@@ -123,28 +140,23 @@ service cloud.firestore {
     // =========================================================================
 
     match /recipientGroups/{groupId} {
-      // All authenticated users can read groups
-      allow read: if isAuthenticated();
+      allow read: if isSiteAdmin() || belongsToCompany(resource.data.companyId);
 
-      // Newsletter Admins and above can create/update groups
-      allow create, update: if isNewsletterAdmin() &&
-                              request.resource.data.keys().hasAll(['name', 'recipientCount']);
+      allow create: if isSiteAdmin() || 
+                      (isAuthenticated() && 
+                       request.resource.data.companyId == getUserData().companyId);
 
-      // Newsletter Admins and above can delete groups
-      allow delete: if isNewsletterAdmin();
+      allow update, delete: if isSiteAdmin() || 
+                              (isAuthenticated() && 
+                               resource.data.companyId == getUserData().companyId);
 
       // Recipients subcollection
       match /recipients/{recipientId} {
-        // All authenticated users can read recipients
-        allow read: if isAuthenticated();
+        allow read: if isSiteAdmin() || 
+                      belongsToCompany(get(/databases/$(database)/documents/recipientGroups/$(groupId)).data.companyId);
 
-        // Newsletter Admins and above can add recipients
-        allow create: if isNewsletterAdmin() &&
-                        request.resource.data.keys().hasAll(['email']) &&
-                        isValidEmail(request.resource.data.email);
-
-        // Newsletter Admins and above can update/delete recipients
-        allow update, delete: if isNewsletterAdmin();
+        allow create, update, delete: if isSiteAdmin() || 
+                                        belongsToCompany(get(/databases/$(database)/documents/recipientGroups/$(groupId)).data.companyId);
       }
     }
 
@@ -154,11 +166,9 @@ service cloud.firestore {
 
     match /unsubscribes/{email} {
       // Only authenticated admin users can read unsubscribe records
-      allow read: if isNewsletterAdmin();
-
+      allow read: if isAuthenticated(); // Simplified for now, maybe restrict further
+      
       // Only Cloud Functions can write (create/update/delete)
-      // This is enforced by not having any allow write rules
-      // Cloud Functions have admin SDK access and bypass these rules
     }
 
     // =========================================================================
@@ -166,26 +176,19 @@ service cloud.firestore {
     // =========================================================================
 
     match /newsletters/{newsletterId} {
-      // All authenticated users can read newsletters
-      allow read: if isAuthenticated();
+      allow read: if isSiteAdmin() || belongsToCompany(resource.data.companyId);
 
-      // Newsletter Creators and above can create newsletters
-      allow create: if isNewsletterCreator() &&
-                      request.resource.data.keys().hasAll([
-                        'subject',
-                        'htmlContent',
-                        'categoryId',
-                        'recipientGroupIds',
-                        'status'
-                      ]) &&
-                      request.resource.data.status in ['Draft', 'Scheduled', 'Sent', 'Paused'];
+      allow create: if isSiteAdmin() || 
+                      (isAuthenticated() && 
+                       request.resource.data.companyId == getUserData().companyId);
 
-      // Newsletter Creators and above can update newsletters
-      // Note: In production, you might want to restrict updates to draft newsletters only
-      allow update: if isNewsletterCreator();
+      allow update: if isSiteAdmin() || 
+                      (isAuthenticated() && 
+                       resource.data.companyId == getUserData().companyId);
 
-      // Only Newsletter Admins and above can delete newsletters
-      allow delete: if isNewsletterAdmin();
+      allow delete: if isSiteAdmin() || 
+                      (isAuthenticated() && 
+                       resource.data.companyId == getUserData().companyId);
     }
 
     // =========================================================================
@@ -193,20 +196,15 @@ service cloud.firestore {
     // =========================================================================
 
     match /media/{mediaId} {
-      // All authenticated users can read media
-      allow read: if isAuthenticated();
+      allow read: if isSiteAdmin() || belongsToCompany(resource.data.companyId);
 
-      // Newsletter Creators and above can upload media
-      allow create: if isNewsletterCreator() &&
-                      request.resource.data.keys().hasAll([
-                        'url',
-                        'name',
-                        'size',
-                        'dimensions'
-                      ]);
+      allow create: if isSiteAdmin() || 
+                      (isAuthenticated() && 
+                       request.resource.data.companyId == getUserData().companyId);
 
-      // Only Newsletter Admins and above can delete media
-      allow delete: if isNewsletterAdmin();
+      allow delete: if isSiteAdmin() || 
+                      (isAuthenticated() && 
+                       resource.data.companyId == getUserData().companyId);
     }
 
     // =========================================================================
@@ -214,22 +212,19 @@ service cloud.firestore {
     // =========================================================================
 
     match /auditLogs/{logId} {
-      // Only Site Admins can read audit logs
-      allow read: if isSiteAdmin();
+      // Site Admins can read all logs
+      // Company Admins can read logs for their company
+      allow read: if isSiteAdmin() || 
+                    (isCompanyAdmin() && resource.data.companyId == getUserData().companyId);
 
-      // System can create audit logs (via admin SDK or Cloud Functions)
-      // Client-side creation is restricted
-      allow create: if false;
-
-      // Audit logs cannot be updated or deleted (immutable)
-      allow update, delete: if false;
+      // System/Cloud Functions create logs (deny client write)
+      allow create, update, delete: if false;
     }
 
     // =========================================================================
     // DEFAULT DENY
     // =========================================================================
 
-    // Deny access to any other documents not explicitly allowed
     match /{document=**} {
       allow read, write: if false;
     }

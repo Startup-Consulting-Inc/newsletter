@@ -5,7 +5,8 @@ import { AdminPanel } from './components/AdminPanel';
 import { ProfilePage } from './components/ProfilePage';
 import { AuthPage } from './components/AuthPage';
 import { Analytics } from './components/Analytics';
-import { User, Newsletter, NewsletterStatus } from './types';
+import { LandingPage } from './components/LandingPage';
+import { User, Newsletter, NewsletterStatus, Company, UserRole } from './types';
 import { api, isDatabaseSeeded, seedFirestoreData } from './services';
 import { auth } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -28,17 +29,20 @@ import {
   Trash2,
   Download,
   FileCode,
+  AlertCircle,
   FileText
 } from 'lucide-react';
 import { logUserLogin, logUserLogout } from './services/auditService';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [company, setCompany] = useState<Company | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingNewsletter, setEditingNewsletter] = useState<Newsletter | undefined>(undefined);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
+  const [showLogin, setShowLogin] = useState(false);
 
   // Dashboard Data
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
@@ -47,21 +51,27 @@ export default function App() {
   useEffect(() => {
     const fetchRecipientCount = async () => {
       try {
-        const groups = await api.getGroups();
+        const groups = await api.getGroups(user?.companyId);
         const count = groups.reduce((acc, group) => acc + (group.recipientCount || 0), 0);
         setTotalRecipients(count);
       } catch (error) {
         console.error('Failed to fetch recipient count:', error);
       }
     };
-    fetchRecipientCount();
+    if (user) {
+      fetchRecipientCount();
+    }
   }, [user]);
 
   // Filter and sort state
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<NewsletterStatus[]>([]);
+  const [newsletterCompanyFilter, setNewsletterCompanyFilter] = useState<string>('all'); // 'all' or companyId
   const [sortBy, setSortBy] = useState<'updatedAt' | 'subject' | 'scheduledAt' | 'sentAt' | 'opens'>('updatedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Companies state for Site Admin filtering
+  const [companies, setCompanies] = useState<Company[]>([]);
 
   // Auto-seed database on first load (only if empty)
   useEffect(() => {
@@ -103,6 +113,13 @@ export default function App() {
             firebaseUser.photoURL
           );
           setUser(appUser);
+
+          // Fetch company details if associated
+          if (appUser.companyId) {
+            const companyData = await api.getCompany(appUser.companyId);
+            setCompany(companyData);
+          }
+
           setActiveTab('dashboard');
 
           // Log user login and track session start
@@ -112,6 +129,7 @@ export default function App() {
             userName: appUser.name,
             userEmail: appUser.email,
             userRole: appUser.role,
+            companyId: appUser.companyId,
             method: firebaseUser.providerData[0]?.providerId || 'unknown',
           });
         } catch (error) {
@@ -119,10 +137,12 @@ export default function App() {
           // Sign out on sync failure to prevent redirect loop
           await signOut(auth);
           setUser(null);
+          setCompany(undefined);
           alert('Failed to create user profile. Please try again or contact support.');
         }
       } else {
         setUser(null);
+        setCompany(undefined);
       }
       setIsLoading(false);
     });
@@ -132,9 +152,87 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      api.getNewsletters().then(setNewsletters);
+      const queryCompanyId = user.role === UserRole.SITE_ADMIN ? undefined : user.companyId;
+
+      // Debug: Log user info to verify companyId
+      console.log('🔍 Fetching newsletters for user:', {
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        userCompanyId: user.companyId,
+        queryingWith: queryCompanyId || 'ALL_COMPANIES (Site Admin)'
+      });
+
+      // Pass companyId to filter newsletters (Site Admin gets all if no companyId passed, but we might want to restrict/filter in UI)
+      // For now, Site Admin sees all, others see their company's
+      api.getNewsletters(queryCompanyId).then((fetchedNewsletters) => {
+        console.log('📦 Newsletters received from API:', {
+          totalCount: fetchedNewsletters.length,
+          queriedWithCompanyId: queryCompanyId || 'undefined (all companies)',
+          newsletters: fetchedNewsletters.map(n => ({
+            id: n.id,
+            subject: n.subject,
+            companyId: n.companyId,
+            status: n.status,
+            matchesUserCompany: n.companyId === user.companyId
+          }))
+        });
+
+        if (fetchedNewsletters.length === 0) {
+          console.warn('⚠️ No newsletters returned from API. Possible issues:');
+          console.warn('  1. User companyId mismatch:', user.companyId);
+          console.warn('  2. No newsletters exist for this company');
+          console.warn('  3. Firestore security rules blocking access');
+        }
+
+        setNewsletters(fetchedNewsletters);
+      }).catch(error => {
+        console.error('❌ Failed to fetch newsletters:', error);
+        console.error('Error details:', {
+          message: error.message,
+          code: error.code,
+          userCompanyId: user.companyId
+        });
+        setNewsletters([]);
+      });
+
+      // Load companies for Site Admin to enable company filtering and display
+      if (user.role === UserRole.SITE_ADMIN && activeTab === 'newsletters') {
+        api.getCompanies().then(setCompanies).catch(error => {
+          console.error('❌ Failed to fetch companies:', error);
+          setCompanies([]);
+        });
+      }
     }
   }, [user, activeTab, isEditorOpen]);
+
+  // Validate that non-Site-Admin users have a valid companyId
+  useEffect(() => {
+    if (user && user.role !== UserRole.SITE_ADMIN) {
+      if (!user.companyId) {
+        console.error('❌ CRITICAL: User missing companyId:', {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          userEmail: user.email
+        });
+        alert(
+          '❌ Account Configuration Error\n\n' +
+          'Your account is not associated with a company. This is required for Company Admin and Newsletter Admin roles.\n\n' +
+          'Please contact your Site Administrator to assign you to a company.\n\n' +
+          'You will be signed out for security reasons.'
+        );
+        handleSignOut();
+      } else {
+        console.log('✅ User validation passed:', {
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          companyId: user.companyId
+        });
+      }
+    }
+  }, [user]);
 
   const handleSignOut = async () => {
     if (auth && user) {
@@ -148,10 +246,12 @@ export default function App() {
         userName: user.name,
         userEmail: user.email,
         sessionDuration,
+        companyId: user.companyId,
       });
 
       await signOut(auth);
       setUser(null);
+      setCompany(undefined);
       setSessionStartTime(null);
     }
   };
@@ -161,10 +261,12 @@ export default function App() {
     setIsEditorOpen(true);
   };
 
-  const handleSaveNewsletter = () => {
+  const handleSaveNewsletter = async () => {
     setIsEditorOpen(false);
     setEditingNewsletter(undefined);
-    api.getNewsletters().then(setNewsletters);
+    // Properly await the newsletter list refresh
+    const updatedList = await api.getNewsletters(user?.role === UserRole.SITE_ADMIN ? undefined : user?.companyId);
+    setNewsletters(updatedList);
   };
 
   const handleDuplicateNewsletter = async (newsletter: Newsletter) => {
@@ -172,7 +274,7 @@ export default function App() {
       try {
         setIsLoading(true);
         await api.duplicateNewsletter(newsletter.id);
-        const updatedList = await api.getNewsletters();
+        const updatedList = await api.getNewsletters(user?.role === UserRole.SITE_ADMIN ? undefined : user?.companyId);
         setNewsletters(updatedList);
         setIsLoading(false);
       } catch (error) {
@@ -192,7 +294,7 @@ export default function App() {
     try {
       await api.deleteNewsletter(newsletter.id);
       // Refresh list
-      const updatedNewsletters = await api.getNewsletters();
+      const updatedNewsletters = await api.getNewsletters(user?.role === UserRole.SITE_ADMIN ? undefined : user?.companyId);
       setNewsletters(updatedNewsletters);
     } catch (error) {
       console.error('Failed to delete newsletter:', error);
@@ -278,18 +380,39 @@ export default function App() {
 
   // Filter and sort newsletters
   const filteredAndSortedNewsletters = useMemo(() => {
+    console.log('🎯 Filtering newsletters:', {
+      totalNewsletters: newsletters.length,
+      activeFilters: {
+        searchTerm: searchTerm || 'none',
+        statusFilter: statusFilter.length > 0 ? statusFilter : 'none',
+        newsletterCompanyFilter: newsletterCompanyFilter !== 'all' ? newsletterCompanyFilter : 'all (no filter)'
+      }
+    });
+
     let result = [...newsletters];
+    const initialCount = result.length;
 
     // Apply search filter
     if (searchTerm.trim()) {
       result = result.filter(n =>
         n.subject.toLowerCase().includes(searchTerm.toLowerCase())
       );
+      console.log(`  ├─ After search filter: ${result.length}/${initialCount} (removed ${initialCount - result.length})`);
     }
 
     // Apply status filter
     if (statusFilter.length > 0) {
+      const beforeStatusFilter = result.length;
       result = result.filter(n => statusFilter.includes(n.status));
+      console.log(`  ├─ After status filter: ${result.length}/${beforeStatusFilter} (removed ${beforeStatusFilter - result.length})`);
+    }
+
+    // Apply company filter (Site Admin only)
+    if (newsletterCompanyFilter !== 'all') {
+      const beforeCompanyFilter = result.length;
+      result = result.filter(n => n.companyId === newsletterCompanyFilter);
+      console.log(`  ├─ After company filter: ${result.length}/${beforeCompanyFilter} (removed ${beforeCompanyFilter - result.length})`);
+      console.log(`     Filtering for companyId: ${newsletterCompanyFilter}`);
     }
 
     // Apply sorting
@@ -317,8 +440,13 @@ export default function App() {
       return sortDirection === 'asc' ? compareValue : -compareValue;
     });
 
+    console.log(`  └─ ✅ Final filtered & sorted: ${result.length} newsletters`);
+    if (result.length === 0 && newsletters.length > 0) {
+      console.warn('⚠️ All newsletters were filtered out! Check your filter settings.');
+    }
+
     return result;
-  }, [newsletters, searchTerm, statusFilter, sortBy, sortDirection]);
+  }, [newsletters, searchTerm, statusFilter, newsletterCompanyFilter, sortBy, sortDirection]);
 
   if (isLoading) {
     return (
@@ -329,7 +457,10 @@ export default function App() {
   }
 
   if (!user) {
-    return <AuthPage />;
+    if (showLogin) {
+      return <AuthPage />;
+    }
+    return <LandingPage onLogin={() => setShowLogin(true)} />;
   }
 
   const renderContent = () => {
@@ -337,6 +468,7 @@ export default function App() {
       return (
         <NewsletterEditor
           newsletter={editingNewsletter}
+          currentUser={user}
           onSave={handleSaveNewsletter}
           onCancel={() => setIsEditorOpen(false)}
         />
@@ -345,7 +477,16 @@ export default function App() {
 
     switch (activeTab) {
       case 'admin':
-        return <AdminPanel currentUser={user} />;
+        // Only allow Site Admin and Company Admin to access admin panel
+        if (user.role === UserRole.SITE_ADMIN || user.role === UserRole.COMPANY_ADMIN) {
+          return <AdminPanel currentUser={user} />;
+        }
+        return (
+          <div className="p-8 text-center">
+            <h2 className="text-2xl font-bold text-gray-800">Access Denied</h2>
+            <p className="text-gray-600 mt-2">You do not have permission to view this page.</p>
+          </div>
+        );
 
       case 'profile':
         return <ProfilePage user={user} onUpdateUser={handleUpdateUser} />;
@@ -406,6 +547,27 @@ export default function App() {
                   )}
                 </div>
 
+                {/* Company Filter (Site Admin only) */}
+                {user.role === UserRole.SITE_ADMIN && (
+                  <div className="relative">
+                    <select
+                      value={newsletterCompanyFilter}
+                      onChange={(e) => setNewsletterCompanyFilter(e.target.value)}
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px] h-10"
+                    >
+                      <option value="all">All Companies</option>
+                      {companies.map(company => (
+                        <option key={company.id} value={company.id}>{company.name}</option>
+                      ))}
+                    </select>
+                    {newsletterCompanyFilter !== 'all' && (
+                      <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                        1
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Sort Dropdown */}
                 <div className="flex gap-2">
                   <select
@@ -430,11 +592,12 @@ export default function App() {
                 </div>
 
                 {/* Clear Filters */}
-                {(searchTerm || statusFilter.length > 0) && (
+                {(searchTerm || statusFilter.length > 0 || newsletterCompanyFilter !== 'all') && (
                   <button
                     onClick={() => {
                       setSearchTerm('');
                       setStatusFilter([]);
+                      setNewsletterCompanyFilter('all');
                     }}
                     className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg whitespace-nowrap"
                   >
@@ -461,6 +624,11 @@ export default function App() {
                         }`}>
                         {n.status}
                       </span>
+                      {user.role === UserRole.SITE_ADMIN && n.companyId && (
+                        <span className="text-gray-700 font-medium">
+                          {companies.find(c => c.id === n.companyId)?.name || 'Unknown Company'}
+                        </span>
+                      )}
                       <span>
                         {n.status === 'Scheduled' && n.scheduledAt
                           ? `Scheduled for: ${new Date(n.scheduledAt).toLocaleString()}`
@@ -469,10 +637,18 @@ export default function App() {
                             : `Updated: ${new Date(n.updatedAt).toLocaleDateString()}`}
                       </span>
                       {n.stats && (
-                        <span className="flex items-center text-gray-400">
-                          <BarChart3 className="w-3 h-3 mr-1" />
-                          {n.stats.opened} opens
-                        </span>
+                        <>
+                          <span className="flex items-center text-gray-400">
+                            <BarChart3 className="w-3 h-3 mr-1" />
+                            {n.stats.opened} opens
+                          </span>
+                          {n.status === 'Sent' && n.stats.bounced > 0 && (
+                            <span className="flex items-center text-red-600">
+                              <AlertCircle className="w-3 h-3 mr-1" />
+                              {n.stats.bounced} bounced
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -571,7 +747,14 @@ export default function App() {
               <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-400 opacity-10 rounded-full -ml-10 -mb-10 blur-2xl"></div>
 
               <div className="relative z-10">
-                <h1 className="text-3xl font-bold mb-2">Welcome back, {user.name}!</h1>
+                <div className="flex items-center mb-2">
+                  <h1 className="text-3xl font-bold mr-4">Welcome back, {user.name}!</h1>
+                  {company && (
+                    <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-medium border border-white border-opacity-20">
+                      {company.name}
+                    </span>
+                  )}
+                </div>
                 <p className="text-blue-100 mb-8 max-w-2xl text-lg">
                   {scheduledNewsletters.length > 0
                     ? `You have ${scheduledNewsletters.length} scheduled newsletter${scheduledNewsletters.length === 1 ? '' : 's'} coming up.`
@@ -586,13 +769,15 @@ export default function App() {
                     <PenTool className="w-5 h-5 mr-2" />
                     Draft New Newsletter
                   </button>
-                  <button
-                    onClick={() => setActiveTab('admin')}
-                    className="bg-blue-600 bg-opacity-40 text-white px-6 py-3 rounded-xl font-semibold hover:bg-opacity-50 transition-colors backdrop-blur-sm flex items-center border border-blue-400 border-opacity-30"
-                  >
-                    <Users className="w-5 h-5 mr-2" />
-                    Manage Subscribers
-                  </button>
+                  {(user.role === UserRole.SITE_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
+                    <button
+                      onClick={() => setActiveTab('admin')}
+                      className="bg-blue-600 bg-opacity-40 text-white px-6 py-3 rounded-xl font-semibold hover:bg-opacity-50 transition-colors backdrop-blur-sm flex items-center border border-blue-400 border-opacity-30"
+                    >
+                      <Users className="w-5 h-5 mr-2" />
+                      Manage {user.role === UserRole.SITE_ADMIN ? 'System' : 'Company'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

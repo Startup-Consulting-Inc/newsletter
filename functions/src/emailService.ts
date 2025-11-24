@@ -124,6 +124,15 @@ function generatePlainText(html: string): string {
 }
 
 /**
+ * Validate email format
+ */
+function isValidEmail(email: string): boolean {
+  // Strict email regex but allowing + for aliases
+  const emailRegex = /^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+  return emailRegex.test(email);
+}
+
+/**
  * Send email to a single recipient
  */
 async function sendSingleEmail(
@@ -131,6 +140,12 @@ async function sendSingleEmail(
   recipient: Recipient
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Validate email format first
+    if (!isValidEmail(recipient.email)) {
+      console.warn(`⚠️ Invalid email format for recipient ${recipient.id}: ${recipient.email}`);
+      return { success: false, error: 'Invalid email format' };
+    }
+
     const htmlContent = prepareEmailHTML(
       newsletter.htmlContent,
       newsletter.id,

@@ -91,7 +91,7 @@ Examples:
         console.log(`   Users: ${stats.users}`);
         console.log(`   Categories: ${stats.categories}`);
         console.log(`   Newsletters: ${stats.newsletters}`);
-        console.log(`   Recipient Groups: ${stats.groups}`);
+        console.log(`   Recipient Groups: ${stats.recipientGroups}`);
         console.log(`   Media Items: ${stats.media}`);
         console.log(`   Audit Logs: ${stats.auditLogs}\n`);
 
@@ -109,7 +109,7 @@ Examples:
     console.log(`   Users: ${finalStats.users}`);
     console.log(`   Categories: ${finalStats.categories}`);
     console.log(`   Newsletters: ${finalStats.newsletters}`);
-    console.log(`   Recipient Groups: ${finalStats.groups}`);
+    console.log(`   Recipient Groups: ${finalStats.recipientGroups}`);
     console.log(`   Media Items: ${finalStats.media}`);
     console.log(`   Audit Logs: ${finalStats.auditLogs}\n`);
 

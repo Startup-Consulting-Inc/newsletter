@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, UserRole, AuditLogEntry, Category, RecipientGroup, Recipient, AuditCategory, AuditSeverity } from '../types';
+import { User, UserRole, AuditLogEntry, Category, RecipientGroup, Recipient, AuditCategory, AuditSeverity, Company } from '../types';
 import { api } from '../services';
 import { Plus, Search, Trash2, Edit, Download, X, Upload, Users as UsersIcon, List, Copy, Save, Check } from 'lucide-react';
+import { BounceReport } from './BounceReport';
 
 interface AdminPanelProps {
   currentUser: User;
@@ -9,16 +10,22 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   const isSiteAdmin = currentUser.role === UserRole.SITE_ADMIN;
-  
-  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'categories' | 'groups'>(isSiteAdmin ? 'users' : 'categories');
+
+  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'bounces' | 'categories' | 'groups' | 'companies' | 'companyProfile'>(
+    isSiteAdmin ? 'companies' : currentUser.role === UserRole.COMPANY_ADMIN ? 'companyProfile' : 'categories'
+  );
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [groups, setGroups] = useState<RecipientGroup[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [currentCompany, setCurrentCompany] = useState<Company | undefined>(undefined);
+  const [companyNewsletters, setCompanyNewsletters] = useState<any[]>([]);
 
   // Users tab filter/sort state
   const [usersSearch, setUsersSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole[]>([]);
+  const [companyFilter, setCompanyFilter] = useState<string>('all'); // 'all', 'unassigned', or companyId
   const [usersSortBy, setUsersSortBy] = useState<'name' | 'email' | 'role'>('name');
   const [usersSortDir, setUsersSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -39,15 +46,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   const [groupsSearch, setGroupsSearch] = useState('');
   const [groupsSortBy, setGroupsSortBy] = useState<'name' | 'recipientCount'>('name');
   const [groupsSortDir, setGroupsSortDir] = useState<'asc' | 'desc'>('asc');
-  
+
   // Modals State
   const [showUserModal, setShowUserModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showRecipientModal, setShowRecipientModal] = useState(false);
-  
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
+
   // Form Data
-  const [userData, setUserData] = useState<Partial<User>>({ role: UserRole.NEWSLETTER_CREATOR, name: '', email: '' });
+  const [userData, setUserData] = useState<Partial<User>>({ role: UserRole.NEWSLETTER_ADMIN, name: '', email: '' });
+  const [companyData, setCompanyData] = useState<Partial<Company>>({ name: '', logoUrl: '' });
   const [categoryName, setCategoryName] = useState('');
   const [groupName, setGroupName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<RecipientGroup | null>(null);
@@ -56,10 +65,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   const [editData, setEditData] = useState<Partial<Recipient>>({});
 
   const loadData = async () => {
-    if (activeTab === 'users' && isSiteAdmin) setUsers(await api.getUsers());
-    if (activeTab === 'audit' && isSiteAdmin) setLogs(await api.getAuditLogs());
-    if (activeTab === 'categories') setCategories(await api.getCategories());
-    if (activeTab === 'groups') setGroups(await api.getGroups());
+    if (activeTab === 'users' && (isSiteAdmin || currentUser.role === UserRole.COMPANY_ADMIN)) {
+      setUsers(await api.getUsers(isSiteAdmin ? undefined : currentUser.companyId));
+      // Load companies for Site Admin to show company names and enable filtering
+      if (isSiteAdmin) setCompanies(await api.getCompanies());
+    }
+    if (activeTab === 'audit' && (isSiteAdmin || currentUser.role === UserRole.COMPANY_ADMIN)) setLogs(await api.getAuditLogs(isSiteAdmin ? undefined : currentUser.companyId));
+    if (activeTab === 'categories') setCategories(await api.getCategories(isSiteAdmin ? undefined : currentUser.companyId));
+    if (activeTab === 'groups') setGroups(await api.getGroups(isSiteAdmin ? undefined : currentUser.companyId));
+    if (activeTab === 'companies' && isSiteAdmin) setCompanies(await api.getCompanies());
+    if (activeTab === 'companyProfile' && currentUser.companyId) {
+      const company = await api.getCompany(currentUser.companyId);
+      setCurrentCompany(company);
+      const newsletters = await api.getNewsletters(currentUser.companyId);
+      setCompanyNewsletters(newsletters);
+      setCategories(await api.getCategories(currentUser.companyId));
+      setGroups(await api.getGroups(currentUser.companyId));
+    }
   };
 
   useEffect(() => {
@@ -84,6 +106,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
       result = result.filter(u => roleFilter.includes(u.role));
     }
 
+    // Apply company filter
+    if (companyFilter !== 'all') {
+      if (companyFilter === 'unassigned') {
+        result = result.filter(u => !u.companyId);
+      } else {
+        result = result.filter(u => u.companyId === companyFilter);
+      }
+    }
+
     // Apply sorting
     result.sort((a, b) => {
       let compareValue = 0;
@@ -102,7 +133,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
     });
 
     return result;
-  }, [users, usersSearch, roleFilter, usersSortBy, usersSortDir]);
+  }, [users, usersSearch, roleFilter, companyFilter, usersSortBy, usersSortDir]);
 
   const filteredAndSortedLogs = useMemo(() => {
     let result = [...logs];
@@ -233,9 +264,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   // User Actions
   const handleSaveUser = async () => {
     if (userData.id) {
-        await api.updateUser(userData.id, userData);
+      await api.updateUser(userData.id, userData);
     } else {
-        await api.addUser(userData as User);
+      // If Company Admin, force companyId
+      if (currentUser.role === UserRole.COMPANY_ADMIN) {
+        userData.companyId = currentUser.companyId;
+      }
+      await api.addUser(userData as User);
     }
     setShowUserModal(false);
     loadData();
@@ -248,10 +283,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
     }
   };
 
+  // Company Actions
+  const handleSaveCompany = async () => {
+    if (companyData.id) {
+      await api.updateCompany(companyData.id, companyData);
+    } else {
+      if (!companyData.name) return;
+      await api.createCompany(companyData.name, companyData.logoUrl);
+    }
+    setShowCompanyModal(false);
+    loadData();
+  };
+
+  const handleDeleteCompany = async (id: string) => {
+    if (confirm('Delete this company? This will affect all associated users and data.')) {
+      // In a real app, we might want to soft delete or check for dependencies first
+      // For now, we'll just delete the company record
+      // Note: api.deleteCompany is not implemented yet, assuming manual cleanup or future implementation
+      alert('Company deletion is not fully implemented yet.');
+    }
+  };
+
   // Category Actions
   const handleAddCategory = async () => {
     if (!categoryName) return;
-    await api.addCategory(categoryName);
+    if (!currentUser.companyId) {
+      alert("You must belong to a company to create categories.");
+      return;
+    }
+    await api.addCategory(categoryName, currentUser.companyId);
     setCategoryName('');
     setShowCategoryModal(false);
     loadData();
@@ -259,8 +319,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
 
   const handleDeleteCategory = async (id: string) => {
     if (confirm('Delete this category?')) {
-        await api.deleteCategory(id);
-        loadData();
+      await api.deleteCategory(id);
+      loadData();
     }
   };
 
@@ -275,189 +335,200 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   // Group Actions
   const handleAddGroup = async () => {
     if (!groupName) return;
-    await api.addGroup(groupName);
+    if (!currentUser.companyId) {
+      alert("You must belong to a company to create groups.");
+      return;
+    }
+    await api.addGroup(groupName, currentUser.companyId);
     setGroupName('');
     setShowGroupModal(false);
     loadData();
   };
 
   const handleDeleteGroup = async (id: string) => {
-      if (confirm('Delete this group?')) {
-          await api.deleteGroup(id);
-          loadData();
-      }
+    if (confirm('Delete this group?')) {
+      await api.deleteGroup(id);
+      loadData();
+    }
   };
 
   const handleDuplicateGroup = async (id: string) => {
-      if (confirm('Duplicate this group with all recipients?')) {
-          await api.duplicateGroup(id);
-          loadData();
-      }
+    if (confirm('Duplicate this group with all recipients?')) {
+      await api.duplicateGroup(id);
+      loadData();
+    }
   };
 
   const handleAddRecipient = async () => {
-      if (!selectedGroup || !recipientData.email) return;
+    if (!selectedGroup || !recipientData.email) return;
 
-      // Check if email is unsubscribed
-      const isUnsubscribed = await api.isUnsubscribed(recipientData.email);
-      if (isUnsubscribed) {
-          alert(`Cannot add ${recipientData.email} - this email is unsubscribed.`);
-          return;
-      }
+    // Check if email is unsubscribed
+    const isUnsubscribed = await api.isUnsubscribed(recipientData.email);
+    if (isUnsubscribed) {
+      alert(`Cannot add ${recipientData.email} - this email is unsubscribed.`);
+      return;
+    }
 
-      await api.addRecipient(selectedGroup.id, recipientData);
-      setRecipientData({ email: '', firstName: '', lastName: '' });
-      // Refresh groups to get updated count, ideally we'd fetch just the group
-      const groups = await api.getGroups();
-      setGroups(groups);
-      setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
+    await api.addRecipient(selectedGroup.id, recipientData);
+    setRecipientData({ email: '', firstName: '', lastName: '' });
+    // Refresh groups to get updated count, ideally we'd fetch just the group
+    const groups = await api.getGroups(isSiteAdmin ? undefined : currentUser.companyId);
+    setGroups(groups);
+    setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
   };
 
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || !e.target.files[0] || !selectedGroup) return;
-      
-      const file = e.target.files[0];
-      const reader = new FileReader();
+    if (!e.target.files || !e.target.files[0] || !selectedGroup) return;
 
-      reader.onload = async (event) => {
-        const text = event.target?.result as string;
-        if (!text) return;
+    const file = e.target.files[0];
+    const reader = new FileReader();
 
-        const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
-        if (lines.length < 2) {
-            alert("CSV file is empty or missing headers");
-            return;
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+
+      const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+      if (lines.length < 2) {
+        alert("CSV file is empty or missing headers");
+        return;
+      }
+
+      // Validate Headers
+      // Remove potential BOM and surrounding quotes
+      const headers = lines[0].replace(/^\uFEFF/, '').split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+
+      // Determine indices (case-insensitive)
+      const emailIdx = headers.findIndex(h => h.toLowerCase() === 'email');
+      const firstNameIdx = headers.findIndex(h => h.toLowerCase() === 'firstname');
+      const lastNameIdx = headers.findIndex(h => h.toLowerCase() === 'lastname');
+
+      if (emailIdx === -1 || firstNameIdx === -1 || lastNameIdx === -1) {
+        alert(`Invalid CSV headers. Expected: "Email", "FirstName", "LastName". Found: ${headers.join(', ')}`);
+        return;
+      }
+
+      let successCount = 0;
+      let failCount = 0;
+      const errors: string[] = [];
+
+      // Process rows
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        const values = line.split(',').map(v => v.trim());
+
+        if (values.length < headers.length) {
+          // Skip incomplete lines
+          continue;
         }
 
-        // Validate Headers
-        // Remove potential BOM and surrounding quotes
-        const headers = lines[0].replace(/^\uFEFF/, '').split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-        
-        // Determine indices (case-insensitive)
-        const emailIdx = headers.findIndex(h => h.toLowerCase() === 'email');
-        const firstNameIdx = headers.findIndex(h => h.toLowerCase() === 'firstname');
-        const lastNameIdx = headers.findIndex(h => h.toLowerCase() === 'lastname');
-        
-        if (emailIdx === -1 || firstNameIdx === -1 || lastNameIdx === -1) {
-            alert(`Invalid CSV headers. Expected: "Email", "FirstName", "LastName". Found: ${headers.join(', ')}`);
-            return;
-        }
+        const email = values[emailIdx];
+        const firstName = values[firstNameIdx] || '';
+        const lastName = values[lastNameIdx] || '';
 
-        let successCount = 0;
-        let failCount = 0;
-        const errors: string[] = [];
-
-        // Process rows
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i];
-            const values = line.split(',').map(v => v.trim()); 
-
-            if (values.length < headers.length) {
-                 // Skip incomplete lines
-                 continue;
+        // Validate Email Format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (email && emailRegex.test(email)) {
+          try {
+            // Check if email is unsubscribed
+            const isUnsubscribed = await api.isUnsubscribed(email);
+            if (isUnsubscribed) {
+              failCount++;
+              errors.push(`Row ${i + 1}: ${email} is unsubscribed`);
+              continue;
             }
-            
-            const email = values[emailIdx];
-            const firstName = values[firstNameIdx] || '';
-            const lastName = values[lastNameIdx] || '';
 
-            // Validate Email Format
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (email && emailRegex.test(email)) {
-                try {
-                    // Check if email is unsubscribed
-                    const isUnsubscribed = await api.isUnsubscribed(email);
-                    if (isUnsubscribed) {
-                        failCount++;
-                        errors.push(`Row ${i+1}: ${email} is unsubscribed`);
-                        continue;
-                    }
-
-                    await api.addRecipient(selectedGroup.id, { email, firstName, lastName });
-                    successCount++;
-                } catch (err) {
-                    console.error(err);
-                    failCount++;
-                    errors.push(`Row ${i+1}: Error adding ${email}`);
-                }
-            } else {
-                failCount++;
-                errors.push(`Row ${i+1}: Invalid email format`);
-            }
+            await api.addRecipient(selectedGroup.id, { email, firstName, lastName });
+            successCount++;
+          } catch (err) {
+            console.error(err);
+            failCount++;
+            errors.push(`Row ${i + 1}: Error adding ${email}`);
+          }
+        } else {
+          failCount++;
+          errors.push(`Row ${i + 1}: Invalid email format`);
         }
+      }
 
-        let msg = `Import completed.\nSuccessfully added: ${successCount}\nFailed: ${failCount}`;
-        if (errors.length > 0) {
-            msg += `\n\nFirst 5 errors:\n${errors.slice(0, 5).join('\n')}`;
-        }
-        alert(msg);
-        
-        // Refresh data
-        const groups = await api.getGroups();
-        setGroups(groups);
-        
-        // Update selected group view
-        const updatedGroup = groups.find(g => g.id === selectedGroup.id);
-        if (updatedGroup) setSelectedGroup(updatedGroup);
-        
-        // Reset file input
-        e.target.value = '';
-      };
+      let msg = `Import completed.\nSuccessfully added: ${successCount}\nFailed: ${failCount}`;
+      if (errors.length > 0) {
+        msg += `\n\nFirst 5 errors:\n${errors.slice(0, 5).join('\n')}`;
+      }
+      alert(msg);
 
-      reader.onerror = () => {
-          alert("Failed to read file");
-      };
+      // Refresh data
+      const groups = await api.getGroups(isSiteAdmin ? undefined : currentUser.companyId);
+      setGroups(groups);
 
-      reader.readAsText(file);
+      // Update selected group view
+      const updatedGroup = groups.find(g => g.id === selectedGroup.id);
+      if (updatedGroup) setSelectedGroup(updatedGroup);
+
+      // Reset file input
+      e.target.value = '';
+    };
+
+    reader.onerror = () => {
+      alert("Failed to read file");
+    };
+
+    reader.readAsText(file);
   };
 
   const handleDeleteRecipient = async (recipientId: string) => {
-      if (!selectedGroup || !confirm('Delete this recipient?')) return;
-      await api.deleteRecipient(selectedGroup.id, recipientId);
-      // Refresh groups
-      const groups = await api.getGroups();
-      setGroups(groups);
-      setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
+    if (!selectedGroup || !confirm('Delete this recipient?')) return;
+    await api.deleteRecipient(selectedGroup.id, recipientId);
+    // Refresh groups
+    const groups = await api.getGroups(isSiteAdmin ? undefined : currentUser.companyId);
+    setGroups(groups);
+    setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
   };
 
   const handleEditRecipient = (recipient: Recipient) => {
-      setEditingRecipient(recipient);
-      setEditData({
-          email: recipient.email,
-          firstName: recipient.firstName,
-          lastName: recipient.lastName,
-      });
+    setEditingRecipient(recipient);
+    setEditData({
+      email: recipient.email,
+      firstName: recipient.firstName,
+      lastName: recipient.lastName,
+    });
   };
 
   const handleSaveRecipient = async () => {
-      if (!selectedGroup || !editingRecipient) return;
-      await api.updateRecipient(selectedGroup.id, editingRecipient.id, editData);
-      // Refresh groups
-      const groups = await api.getGroups();
-      setGroups(groups);
-      setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
-      setEditingRecipient(null);
-      setEditData({});
+    if (!selectedGroup || !editingRecipient) return;
+    await api.updateRecipient(selectedGroup.id, editingRecipient.id, editData);
+    // Refresh groups
+    const groups = await api.getGroups(isSiteAdmin ? undefined : currentUser.companyId);
+    setGroups(groups);
+    setSelectedGroup(groups.find(g => g.id === selectedGroup.id) || null);
+    setEditingRecipient(null);
+    setEditData({});
   };
 
   const handleCancelEdit = () => {
-      setEditingRecipient(null);
-      setEditData({});
+    setEditingRecipient(null);
+    setEditData({});
   };
 
   const renderTabs = () => {
-     return (
-        <div className="flex space-x-1 bg-white p-1 rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
-           {isSiteAdmin && (
-               <>
-                <button onClick={() => setActiveTab('users')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'users' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Users</button>
-                <button onClick={() => setActiveTab('audit')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'audit' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Audit Log</button>
-               </>
-           )}
-           <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'categories' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Categories</button>
-           <button onClick={() => setActiveTab('groups')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'groups' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Recipient Groups</button>
-        </div>
-     );
+    return (
+      <div className="flex space-x-1 bg-white p-1 rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
+        {isSiteAdmin && (
+          <button onClick={() => setActiveTab('companies')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'companies' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Companies</button>
+        )}
+        {currentUser.role === UserRole.COMPANY_ADMIN && (
+          <button onClick={() => setActiveTab('companyProfile')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'companyProfile' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Company Profile</button>
+        )}
+        {(isSiteAdmin || currentUser.role === UserRole.COMPANY_ADMIN) && (
+          <>
+            <button onClick={() => setActiveTab('users')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'users' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Users</button>
+            <button onClick={() => setActiveTab('audit')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'audit' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Audit Log</button>
+            <button onClick={() => setActiveTab('bounces')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'bounces' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Bounced Emails</button>
+          </>
+        )}
+        <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'categories' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Categories</button>
+        <button onClick={() => setActiveTab('groups')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'groups' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Recipient Groups</button>
+      </div>
+    );
   };
 
   return (
@@ -491,7 +562,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                 multiple
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(
-                  Array.from(e.target.selectedOptions, option => option.value as UserRole)
+                  Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value as UserRole)
                 )}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px] h-10"
                 size={1}
@@ -507,6 +578,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                 </span>
               )}
             </div>
+
+            {/* Company Filter (Site Admin only) */}
+            {isSiteAdmin && (
+              <div className="relative">
+                <select
+                  value={companyFilter}
+                  onChange={(e) => setCompanyFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px] h-10"
+                >
+                  <option value="all">All Companies</option>
+                  <option value="unassigned">Unassigned</option>
+                  {companies.map(company => (
+                    <option key={company.id} value={company.id}>{company.name}</option>
+                  ))}
+                </select>
+                {companyFilter !== 'all' && (
+                  <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    1
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Sort Dropdown */}
             <div className="flex gap-2">
@@ -530,11 +623,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
             </div>
 
             {/* Clear + Add Button */}
-            {(usersSearch || roleFilter.length > 0) && (
+            {(usersSearch || roleFilter.length > 0 || companyFilter !== 'all') && (
               <button
                 onClick={() => {
                   setUsersSearch('');
                   setRoleFilter([]);
+                  setCompanyFilter('all');
                 }}
                 className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg whitespace-nowrap"
               >
@@ -543,7 +637,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
             )}
 
             <button
-              onClick={() => { setUserData({ role: UserRole.NEWSLETTER_CREATOR }); setShowUserModal(true); }}
+              onClick={() => { setUserData({ role: UserRole.NEWSLETTER_ADMIN }); setShowUserModal(true); }}
               className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium whitespace-nowrap"
             >
               <Plus className="w-4 h-4 mr-2" /> Add User
@@ -576,7 +670,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                   multiple
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(
-                    Array.from(e.target.selectedOptions, option => option.value as AuditCategory)
+                    Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value as AuditCategory)
                   )}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[150px] h-10"
                   size={1}
@@ -598,7 +692,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                   multiple
                   value={severityFilter}
                   onChange={(e) => setSeverityFilter(
-                    Array.from(e.target.selectedOptions, option => option.value as AuditSeverity)
+                    Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value as AuditSeverity)
                   )}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[140px] h-10"
                   size={1}
@@ -815,14 +909,215 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
         </div>
       )}
 
+      {activeTab === 'companies' && isSiteAdmin && (
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-gray-700">Companies</h3>
+            <button
+              onClick={() => { setCompanyData({}); setShowCompanyModal(true); }}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Company
+            </button>
+          </div>
+          <p className="text-sm text-gray-600 mt-3">
+            Showing {companies.length} companies
+          </p>
+        </div>
+      )}
+
       {/* Tables */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        
+        {/* Company Profile Tab */}
+        {activeTab === 'companyProfile' && currentCompany && (
+          <div className="p-6 space-y-6">
+            {/* Company Header */}
+            <div className="flex items-start justify-between pb-6 border-b border-gray-200">
+              <div className="flex items-center space-x-4">
+                {currentCompany.logoUrl ? (
+                  <img src={currentCompany.logoUrl} alt={currentCompany.name} className="w-16 h-16 rounded-lg object-cover border border-gray-200" />
+                ) : (
+                  <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-2xl font-bold">
+                    {currentCompany.name.charAt(0)}
+                  </div>
+                )}
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">{currentCompany.name}</h2>
+                  <p className="text-sm text-gray-500 mt-1">Created {new Date(currentCompany.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setCompanyData(currentCompany);
+                  setShowCompanyModal(true);
+                }}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                Edit Company
+              </button>
+            </div>
+
+            {/* Statistics Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-blue-600">Total Newsletters</p>
+                    <p className="text-3xl font-bold text-blue-900 mt-2">{companyNewsletters.length}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl border border-green-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-green-600">Recipient Groups</p>
+                    <p className="text-3xl font-bold text-green-900 mt-2">{groups.length}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
+                    <UsersIcon className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-xl border border-purple-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-purple-600">Total Recipients</p>
+                    <p className="text-3xl font-bold text-purple-900 mt-2">
+                      {groups.reduce((acc, g) => acc + g.recipientCount, 0)}
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 bg-purple-500 rounded-lg flex items-center justify-center">
+                    <List className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Newsletters */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Recent Newsletters</h3>
+                <button
+                  onClick={() => setActiveTab('categories')}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  View All →
+                </button>
+              </div>
+              <div className="bg-gray-50 rounded-lg border border-gray-200">
+                {companyNewsletters.length > 0 ? (
+                  <div className="divide-y divide-gray-200">
+                    {companyNewsletters.slice(0, 5).map((newsletter) => (
+                      <div key={newsletter.id} className="p-4 flex items-center justify-between hover:bg-gray-100 transition-colors">
+                        <div>
+                          <h4 className="font-medium text-gray-900">{newsletter.subject}</h4>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {newsletter.status} • Updated {new Date(newsletter.updatedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${newsletter.status === 'Sent' ? 'bg-green-100 text-green-800' :
+                          newsletter.status === 'Scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                          {newsletter.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-gray-500">
+                    <p>No newsletters yet. Create your first newsletter to get started!</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recipient Groups */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Recipient Groups</h3>
+                <button
+                  onClick={() => setActiveTab('groups')}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Manage Groups →
+                </button>
+              </div>
+              <div className="bg-gray-50 rounded-lg border border-gray-200">
+                {groups.length > 0 ? (
+                  <div className="divide-y divide-gray-200">
+                    {groups.slice(0, 5).map((group) => (
+                      <div key={group.id} className="p-4 flex items-center justify-between hover:bg-gray-100 transition-colors">
+                        <div>
+                          <h4 className="font-medium text-gray-900">{group.name}</h4>
+                          <p className="text-sm text-gray-500 mt-1">{group.recipientCount} recipients</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedGroup(group);
+                            setShowRecipientModal(true);
+                          }}
+                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Manage
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-gray-500">
+                    <p>No recipient groups yet. Create a group to start managing recipients!</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'companies' && isSiteAdmin && (
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 font-medium text-gray-500">Company Name</th>
+                <th className="px-6 py-3 font-medium text-gray-500">Logo</th>
+                <th className="px-6 py-3 font-medium text-gray-500 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {companies.map(company => (
+                <tr key={company.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 font-medium text-gray-900">{company.name}</td>
+                  <td className="px-6 py-4">
+                    {company.logoUrl ? (
+                      <img src={company.logoUrl} alt={company.name} className="h-8 w-auto object-contain" />
+                    ) : (
+                      <span className="text-gray-400 text-xs">No Logo</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-right space-x-2">
+                    <button onClick={() => { setCompanyData(company); setShowCompanyModal(true); }} className="text-gray-400 hover:text-blue-600"><Edit className="w-4 h-4" /></button>
+                    {/* <button onClick={() => handleDeleteCompany(company.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button> */}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
         {activeTab === 'users' && (
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 font-medium text-gray-500">User</th>
+                {isSiteAdmin && <th className="px-6 py-3 font-medium text-gray-500">Company</th>}
                 <th className="px-6 py-3 font-medium text-gray-500">Role</th>
                 <th className="px-6 py-3 font-medium text-gray-500 text-right">Actions</th>
               </tr>
@@ -841,6 +1136,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                       </div>
                     </div>
                   </td>
+                  {isSiteAdmin && (
+                    <td className="px-6 py-4">
+                      {user.role === UserRole.SITE_ADMIN ? (
+                        <span className="text-gray-400 text-sm">-</span>
+                      ) : user.companyId ? (
+                        <span className="text-gray-700 text-sm">
+                          {companies.find(c => c.id === user.companyId)?.name || 'Unknown Company'}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-sm italic">No Company</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${user.role === UserRole.SITE_ADMIN ? 'bg-purple-100 text-purple-800' : user.role === UserRole.NEWSLETTER_ADMIN ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
                       {user.role}
@@ -857,259 +1165,300 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
         )}
 
         {activeTab === 'categories' && (
-             <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 font-medium text-gray-500">Name</th>
-                    <th className="px-6 py-3 font-medium text-gray-500">Newsletters</th>
-                    <th className="px-6 py-3 font-medium text-gray-500 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredAndSortedCategories.map(cat => (
-                    <tr key={cat.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 font-medium text-gray-900">{cat.name}</td>
-                      <td className="px-6 py-4 text-gray-500">{cat.count} linked</td>
-                      <td className="px-6 py-4 text-right">
-                        <button onClick={() => handleDeleteCategory(cat.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-             </table>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 font-medium text-gray-500">Name</th>
+                <th className="px-6 py-3 font-medium text-gray-500">Newsletters</th>
+                <th className="px-6 py-3 font-medium text-gray-500 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredAndSortedCategories.map(cat => (
+                <tr key={cat.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 font-medium text-gray-900">{cat.name}</td>
+                  <td className="px-6 py-4 text-gray-500">{cat.count} linked</td>
+                  <td className="px-6 py-4 text-right">
+                    <button onClick={() => handleDeleteCategory(cat.id)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
 
         {activeTab === 'groups' && (
-             <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 font-medium text-gray-500">Group Name</th>
-                    <th className="px-6 py-3 font-medium text-gray-500">Recipients</th>
-                    <th className="px-6 py-3 font-medium text-gray-500 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredAndSortedGroups.map(g => (
-                    <tr key={g.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 font-medium text-gray-900">{g.name}</td>
-                      <td className="px-6 py-4 text-gray-500">{g.recipientCount} members</td>
-                      <td className="px-6 py-4 text-right space-x-2">
-                         <button onClick={() => { setSelectedGroup(g); setShowRecipientModal(true); }} className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2">Manage Recipients</button>
-                         <button onClick={() => handleDuplicateGroup(g.id)} className="text-gray-400 hover:text-blue-600" title="Duplicate group"><Copy className="w-4 h-4" /></button>
-                         <button onClick={() => handleDeleteGroup(g.id)} className="text-gray-400 hover:text-red-600" title="Delete group"><Trash2 className="w-4 h-4" /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-             </table>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 font-medium text-gray-500">Group Name</th>
+                <th className="px-6 py-3 font-medium text-gray-500">Recipients</th>
+                <th className="px-6 py-3 font-medium text-gray-500 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredAndSortedGroups.map(g => (
+                <tr key={g.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 font-medium text-gray-900">{g.name}</td>
+                  <td className="px-6 py-4 text-gray-500">{g.recipientCount} members</td>
+                  <td className="px-6 py-4 text-right space-x-2">
+                    <button onClick={() => { setSelectedGroup(g); setShowRecipientModal(true); }} className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2">Manage Recipients</button>
+                    <button onClick={() => handleDuplicateGroup(g.id)} className="text-gray-400 hover:text-blue-600" title="Duplicate group"><Copy className="w-4 h-4" /></button>
+                    <button onClick={() => handleDeleteGroup(g.id)} className="text-gray-400 hover:text-red-600" title="Delete group"><Trash2 className="w-4 h-4" /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
 
         {activeTab === 'audit' && (
-            <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                        <th className="px-6 py-3 font-medium text-gray-500">Timestamp</th>
-                        <th className="px-6 py-3 font-medium text-gray-500">Action</th>
-                        <th className="px-6 py-3 font-medium text-gray-500">User</th>
-                        <th className="px-6 py-3 font-medium text-gray-500">Target</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                    {filteredAndSortedLogs.map(log => (
-                        <tr key={log.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 text-gray-500 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td>
-                            <td className="px-6 py-4"><span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-md border border-gray-200">{log.action}</span></td>
-                            <td className="px-6 py-4 font-medium">{log.userName}</td>
-                            <td className="px-6 py-4 text-gray-600">{log.target}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 font-medium text-gray-500">Timestamp</th>
+                <th className="px-6 py-3 font-medium text-gray-500">Action</th>
+                <th className="px-6 py-3 font-medium text-gray-500">User</th>
+                <th className="px-6 py-3 font-medium text-gray-500">Target</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredAndSortedLogs.map(log => (
+                <tr key={log.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 text-gray-500 font-mono text-xs">{new Date(log.timestamp).toLocaleString()}</td>
+                  <td className="px-6 py-4"><span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-md border border-gray-200">{log.action}</span></td>
+                  <td className="px-6 py-4 font-medium">{log.userName}</td>
+                  <td className="px-6 py-4 text-gray-600">{log.target}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
+      {/* Bounced Emails Tab */}
+      {activeTab === 'bounces' && <BounceReport companyId={isSiteAdmin ? undefined : currentUser.companyId} />}
+
       {/* Modals */}
-      
+
       {/* User Modal */}
       {showUserModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-                  <h3 className="text-lg font-bold mb-4">{userData.id ? 'Edit User' : 'Create User'}</h3>
-                  <div className="space-y-4">
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700">Full Name</label>
-                          <input type="text" value={userData.name} onChange={e => setUserData({...userData, name: e.target.value})} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700">Email Address</label>
-                          <input type="email" value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700">Role</label>
-                          <select value={userData.role} onChange={e => setUserData({...userData, role: e.target.value as UserRole})} className="w-full mt-1 border border-gray-300 rounded-md p-2 bg-white">
-                              {Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                      </div>
-                  </div>
-                  <div className="mt-6 flex justify-end space-x-3">
-                      <button onClick={() => setShowUserModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
-                      <button onClick={handleSaveUser} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save User</button>
-                  </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold mb-4">{userData.id ? 'Edit User' : 'Create User'}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                <input type="text" value={userData.name} onChange={e => setUserData({ ...userData, name: e.target.value })} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email Address</label>
+                <input type="email" value={userData.email} onChange={e => setUserData({ ...userData, email: e.target.value })} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Role</label>
+                <select value={userData.role} onChange={e => setUserData({ ...userData, role: e.target.value as UserRole })} className="w-full mt-1 border border-gray-300 rounded-md p-2 bg-white">
+                  {Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              {isSiteAdmin && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Company</label>
+                  <select
+                    value={userData.companyId || ''}
+                    onChange={e => setUserData({ ...userData, companyId: e.target.value || undefined })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 bg-white"
+                  >
+                    <option value="">No Company (Global/Site Admin)</option>
+                    {companies.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end space-x-3">
+              <button onClick={() => setShowUserModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
+              <button onClick={handleSaveUser} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save User</button>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Company Modal */}
+      {showCompanyModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold mb-4">{companyData.id ? 'Edit Company' : 'Create Company'}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Company Name</label>
+                <input type="text" value={companyData.name || ''} onChange={e => setCompanyData({ ...companyData, name: e.target.value })} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Logo URL</label>
+                <input type="text" value={companyData.logoUrl || ''} onChange={e => setCompanyData({ ...companyData, logoUrl: e.target.value })} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end space-x-3">
+              <button onClick={() => setShowCompanyModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
+              <button onClick={handleSaveCompany} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Company</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Category Modal */}
       {showCategoryModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
-                  <h3 className="text-lg font-bold mb-4">New Category</h3>
-                  <input type="text" value={categoryName} onChange={e => setCategoryName(e.target.value)} placeholder="Category Name" className="w-full border border-gray-300 rounded-md p-2" />
-                  <div className="mt-6 flex justify-end space-x-3">
-                      <button onClick={() => setShowCategoryModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
-                      <button onClick={handleAddCategory} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Create</button>
-                  </div>
-              </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold mb-4">New Category</h3>
+            <input type="text" value={categoryName} onChange={e => setCategoryName(e.target.value)} placeholder="Category Name" className="w-full border border-gray-300 rounded-md p-2" />
+            <div className="mt-6 flex justify-end space-x-3">
+              <button onClick={() => setShowCategoryModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
+              <button onClick={handleAddCategory} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Create</button>
+            </div>
           </div>
+        </div>
       )}
 
       {/* Group Modal */}
       {showGroupModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
-                  <h3 className="text-lg font-bold mb-4">New Recipient Group</h3>
-                  <input type="text" value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Group Name" className="w-full border border-gray-300 rounded-md p-2" />
-                  <div className="mt-6 flex justify-end space-x-3">
-                      <button onClick={() => setShowGroupModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
-                      <button onClick={handleAddGroup} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Create</button>
-                  </div>
-              </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold mb-4">New Recipient Group</h3>
+            <input type="text" value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Group Name" className="w-full border border-gray-300 rounded-md p-2" />
+            <div className="mt-6 flex justify-end space-x-3">
+              <button onClick={() => setShowGroupModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
+              <button onClick={handleAddGroup} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Create</button>
+            </div>
           </div>
+        </div>
       )}
 
       {/* Recipient Management Modal */}
       {showRecipientModal && selectedGroup && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 flex flex-col max-h-[80vh]">
-                  <div className="flex justify-between items-center mb-6 border-b pb-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-900">Manage Group: {selectedGroup.name}</h3>
-                        <p className="text-sm text-gray-500">{selectedGroup.recipientCount} current recipients</p>
-                      </div>
-                      <button onClick={() => setShowRecipientModal(false)}><X className="w-5 h-5 text-gray-500" /></button>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto space-y-6">
-                      {/* Add Single */}
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-700 mb-3">Add Single Recipient</h4>
-                          <div className="grid grid-cols-4 gap-3">
-                              <input type="email" placeholder="Email (Required)" value={recipientData.email} onChange={e => setRecipientData({...recipientData, email: e.target.value})} className="p-2 border rounded text-sm" />
-                              <input type="text" placeholder="First Name" value={recipientData.firstName} onChange={e => setRecipientData({...recipientData, firstName: e.target.value})} className="p-2 border rounded text-sm" />
-                              <input type="text" placeholder="Last Name" value={recipientData.lastName} onChange={e => setRecipientData({...recipientData, lastName: e.target.value})} className="p-2 border rounded text-sm" />
-                              <button onClick={handleAddRecipient} className="bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">Add</button>
-                          </div>
-                      </div>
-
-                      {/* CSV Import */}
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-700 mb-3">Bulk Import (CSV)</h4>
-                          <div className="flex items-center space-x-4">
-                             <label className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                                 <Upload className="w-4 h-4 mr-2 text-gray-500" />
-                                 <span className="text-sm text-gray-700">Select CSV File</span>
-                                 <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
-                             </label>
-                             <div className="text-xs text-gray-500">
-                                 <p>Headers required:</p>
-                                 <code className="bg-gray-200 px-1 rounded">Email, FirstName, LastName</code>
-                             </div>
-                          </div>
-                      </div>
-
-                      {/* List (Mocked for now as API doesn't return full list in this view for perf) */}
-                      <div>
-                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Recipients</h4>
-                          <div className="bg-white border border-gray-200 rounded-lg">
-                              {selectedGroup.recipients && selectedGroup.recipients.length > 0 ? (
-                                  selectedGroup.recipients.map(r => (
-                                      <div key={r.id} className="px-4 py-2 border-b last:border-0 flex justify-between items-center text-sm">
-                                          {editingRecipient?.id === r.id ? (
-                                              // Edit mode
-                                              <>
-                                                  <div className="flex gap-2 flex-1">
-                                                      <input
-                                                          type="email"
-                                                          value={editData.email || ''}
-                                                          onChange={(e) => setEditData({...editData, email: e.target.value})}
-                                                          className="px-2 py-1 border rounded text-xs flex-1"
-                                                          placeholder="Email"
-                                                      />
-                                                      <input
-                                                          type="text"
-                                                          value={editData.firstName || ''}
-                                                          onChange={(e) => setEditData({...editData, firstName: e.target.value})}
-                                                          className="px-2 py-1 border rounded text-xs w-32"
-                                                          placeholder="First Name"
-                                                      />
-                                                      <input
-                                                          type="text"
-                                                          value={editData.lastName || ''}
-                                                          onChange={(e) => setEditData({...editData, lastName: e.target.value})}
-                                                          className="px-2 py-1 border rounded text-xs w-32"
-                                                          placeholder="Last Name"
-                                                      />
-                                                  </div>
-                                                  <div className="flex gap-1 ml-2">
-                                                      <button
-                                                          onClick={handleSaveRecipient}
-                                                          className="text-green-600 hover:text-green-800 p-1"
-                                                          title="Save"
-                                                      >
-                                                          <Check className="w-4 h-4" />
-                                                      </button>
-                                                      <button
-                                                          onClick={handleCancelEdit}
-                                                          className="text-gray-400 hover:text-gray-600 p-1"
-                                                          title="Cancel"
-                                                      >
-                                                          <X className="w-4 h-4" />
-                                                      </button>
-                                                  </div>
-                                              </>
-                                          ) : (
-                                              // View mode
-                                              <>
-                                                  <span className="text-gray-900">{r.email}</span>
-                                                  <div className="flex items-center gap-2">
-                                                      <span className="text-gray-500">{r.firstName} {r.lastName}</span>
-                                                      <button
-                                                          onClick={() => handleEditRecipient(r)}
-                                                          className="text-gray-400 hover:text-blue-600 p-1"
-                                                          title="Edit recipient"
-                                                      >
-                                                          <Edit className="w-4 h-4" />
-                                                      </button>
-                                                      <button
-                                                          onClick={() => handleDeleteRecipient(r.id)}
-                                                          className="text-gray-400 hover:text-red-600 p-1"
-                                                          title="Delete recipient"
-                                                      >
-                                                          <Trash2 className="w-4 h-4" />
-                                                      </button>
-                                                  </div>
-                                              </>
-                                          )}
-                                      </div>
-                                  ))
-                              ) : (
-                                  <div className="p-4 text-center text-gray-400 text-sm">No recipients in this group.</div>
-                              )}
-                          </div>
-                      </div>
-                  </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 flex flex-col max-h-[80vh]">
+            <div className="flex justify-between items-center mb-6 border-b pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Manage Group: {selectedGroup.name}</h3>
+                <p className="text-sm text-gray-500">{selectedGroup.recipientCount} current recipients</p>
               </div>
+              <button onClick={() => setShowRecipientModal(false)}><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-6">
+              {/* Add Single */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Add Single Recipient</h4>
+                <div className="grid grid-cols-4 gap-3">
+                  <input type="email" placeholder="Email (Required)" value={recipientData.email} onChange={e => setRecipientData({ ...recipientData, email: e.target.value })} className="p-2 border rounded text-sm" />
+                  <input type="text" placeholder="First Name" value={recipientData.firstName} onChange={e => setRecipientData({ ...recipientData, firstName: e.target.value })} className="p-2 border rounded text-sm" />
+                  <input type="text" placeholder="Last Name" value={recipientData.lastName} onChange={e => setRecipientData({ ...recipientData, lastName: e.target.value })} className="p-2 border rounded text-sm" />
+                  <button onClick={handleAddRecipient} className="bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">Add</button>
+                </div>
+              </div>
+
+              {/* CSV Import */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Bulk Import (CSV)</h4>
+                <div className="flex items-center space-x-4">
+                  <label className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                    <Upload className="w-4 h-4 mr-2 text-gray-500" />
+                    <span className="text-sm text-gray-700">Select CSV File</span>
+                    <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
+                  </label>
+                  <div className="text-xs text-gray-500">
+                    <p>Headers required:</p>
+                    <code className="bg-gray-200 px-1 rounded">Email, FirstName, LastName</code>
+                  </div>
+                </div>
+              </div>
+
+              {/* List (Mocked for now as API doesn't return full list in this view for perf) */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Recipients</h4>
+                <div className="bg-white border border-gray-200 rounded-lg">
+                  {selectedGroup.recipients && selectedGroup.recipients.length > 0 ? (
+                    selectedGroup.recipients.map(r => (
+                      <div key={r.id} className="px-4 py-2 border-b last:border-0 flex justify-between items-center text-sm">
+                        {editingRecipient?.id === r.id ? (
+                          // Edit mode
+                          <>
+                            <div className="flex gap-2 flex-1">
+                              <input
+                                type="email"
+                                value={editData.email || ''}
+                                onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                                className="px-2 py-1 border rounded text-xs flex-1"
+                                placeholder="Email"
+                              />
+                              <input
+                                type="text"
+                                value={editData.firstName || ''}
+                                onChange={(e) => setEditData({ ...editData, firstName: e.target.value })}
+                                className="px-2 py-1 border rounded text-xs w-32"
+                                placeholder="First Name"
+                              />
+                              <input
+                                type="text"
+                                value={editData.lastName || ''}
+                                onChange={(e) => setEditData({ ...editData, lastName: e.target.value })}
+                                className="px-2 py-1 border rounded text-xs w-32"
+                                placeholder="Last Name"
+                              />
+                            </div>
+                            <div className="flex gap-1 ml-2">
+                              <button
+                                onClick={handleSaveRecipient}
+                                className="text-green-600 hover:text-green-800 p-1"
+                                title="Save"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="text-gray-400 hover:text-gray-600 p-1"
+                                title="Cancel"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          // View mode
+                          <>
+                            <span className="text-gray-900">{r.email}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500">{r.firstName} {r.lastName}</span>
+                              <button
+                                onClick={() => handleEditRecipient(r)}
+                                className="text-gray-400 hover:text-blue-600 p-1"
+                                title="Edit recipient"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteRecipient(r.id)}
+                                className="text-gray-400 hover:text-red-600 p-1"
+                                title="Delete recipient"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 text-center text-gray-400 text-sm">No recipients in this group.</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
+        </div>
       )}
     </div>
   );

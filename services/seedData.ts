@@ -5,7 +5,14 @@ import { UserRole, NewsletterStatus } from '../types';
 /**
  * Seed initial data to Firestore database
  * This populates the database with test data for development
+ * 
+ * NOTE: This seed data references the "Clearly" company.
+ * All categories, newsletters, recipient groups, and media are scoped to this company.
  */
+
+// Clearly company ID
+const COMPANY_ID = 'pILonq0DtZOhe18fjOfc';
+
 export async function seedFirestoreData() {
   if (!db) {
     throw new Error('Firestore not initialized. Check Firebase configuration.');
@@ -104,22 +111,25 @@ async function seedUsers() {
       avatarUrl: 'https://picsum.photos/id/1011/200/200',
       description: 'Head of Internal IT',
       linkedinUrl: 'https://linkedin.com/in/aliceadmin',
+      // Site Admin - no company association
+    },
+    {
+      id: 'user_jaehee',
+      name: 'Jaehee Song',
+      email: 'jsong@seattlebase.com',
+      role: UserRole.COMPANY_ADMIN,
+      companyId: COMPANY_ID,
+      avatarUrl: 'https://ui-avatars.com/api/?name=Jaehee+Song',
+      description: 'Company Administrator for Clearly',
     },
     {
       id: 'user_bob',
       name: 'Bob Editor',
       email: 'bob@company.com',
       role: UserRole.NEWSLETTER_ADMIN,
+      companyId: COMPANY_ID,
       avatarUrl: 'https://picsum.photos/id/1005/200/200',
       description: 'Communications Director',
-    },
-    {
-      id: 'user_charlie',
-      name: 'Charlie Creator',
-      email: 'charlie@company.com',
-      role: UserRole.NEWSLETTER_CREATOR,
-      avatarUrl: 'https://picsum.photos/id/1025/200/200',
-      description: 'Content Specialist',
     },
   ];
 
@@ -141,10 +151,10 @@ async function seedCategories() {
   console.log('📁 Seeding categories...');
 
   const categories = [
-    { id: 'cat_weekly', name: 'Weekly Updates', count: 1 },
-    { id: 'cat_hr', name: 'HR Announcements', count: 1 },
-    { id: 'cat_tech', name: 'Engineering Tech Talk', count: 1 },
-    { id: 'cat_social', name: 'Social Events', count: 0 },
+    { id: 'cat_weekly', name: 'Weekly Updates', count: 1, companyId: COMPANY_ID },
+    { id: 'cat_hr', name: 'HR Announcements', count: 1, companyId: COMPANY_ID },
+    { id: 'cat_tech', name: 'Engineering Tech Talk', count: 1, companyId: COMPANY_ID },
+    { id: 'cat_social', name: 'Social Events', count: 0, companyId: COMPANY_ID },
   ];
 
   for (const category of categories) {
@@ -205,6 +215,7 @@ async function seedRecipientGroups() {
     await setDoc(doc(db, 'recipientGroups', id), {
       name,
       recipientCount: recipients.length,
+      companyId: COMPANY_ID,
       createdAt: serverTimestamp(),
     });
 
@@ -229,6 +240,7 @@ async function seedNewsletters() {
   const newsletters = [
     {
       id: 'newsletter_q3',
+      companyId: COMPANY_ID,
       subject: 'Q3 Company All-Hands Recap',
       status: NewsletterStatus.SENT,
       categoryId: 'cat_weekly',
@@ -240,6 +252,7 @@ async function seedNewsletters() {
     },
     {
       id: 'newsletter_benefits',
+      companyId: COMPANY_ID,
       subject: 'New Health Benefits Overview',
       status: NewsletterStatus.DRAFT,
       categoryId: 'cat_hr',
@@ -250,6 +263,7 @@ async function seedNewsletters() {
     },
     {
       id: 'newsletter_demo',
+      companyId: COMPANY_ID,
       subject: 'Engineering Demo Day',
       status: NewsletterStatus.SCHEDULED,
       categoryId: 'cat_tech',
@@ -280,6 +294,7 @@ async function seedMedia() {
   const mediaItems = [
     {
       id: 'media_1',
+      companyId: COMPANY_ID,
       url: 'https://picsum.photos/id/10/600/400',
       name: 'office_view.jpg',
       size: '1.2 MB',
@@ -287,6 +302,7 @@ async function seedMedia() {
     },
     {
       id: 'media_2',
+      companyId: COMPANY_ID,
       url: 'https://picsum.photos/id/20/600/400',
       name: 'team_meeting.jpg',
       size: '2.4 MB',
@@ -294,6 +310,7 @@ async function seedMedia() {
     },
     {
       id: 'media_3',
+      companyId: COMPANY_ID,
       url: 'https://picsum.photos/id/30/600/400',
       name: 'coffee_break.jpg',
       size: '0.8 MB',

@@ -7,11 +7,12 @@ import { httpsCallable } from 'firebase/functions';
 
 interface EditorProps {
   newsletter?: Newsletter;
+  currentUser: { companyId?: string }; // Add currentUser to access companyId
   onSave: () => void;
   onCancel: () => void;
 }
 
-export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialData, onSave, onCancel }) => {
+export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialData, currentUser, onSave, onCancel }) => {
   const [subject, setSubject] = useState(initialData?.subject || '');
   const [htmlContent, setHtmlContent] = useState(initialData?.htmlContent || '');
   const [categoryId, setCategoryId] = useState(initialData?.categoryId || '');
@@ -35,10 +36,12 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
 
   useEffect(() => {
     const fetchData = async () => {
+      // CRITICAL: Always pass currentUser.companyId to ensure proper company-level filtering
+      // This prevents users from seeing categories/groups/media from other companies
       const [cats, grps, media] = await Promise.all([
-        api.getCategories(),
-        api.getGroups(),
-        api.getMedia()
+        api.getCategories(currentUser.companyId),
+        api.getGroups(currentUser.companyId),
+        api.getMedia(currentUser.companyId)
       ]);
       setCategories(cats);
       setGroups(grps);
@@ -46,7 +49,7 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
       if (!initialData && cats.length > 0) setCategoryId(cats[0].id);
     };
     fetchData();
-  }, [initialData]);
+  }, [initialData, currentUser.companyId]);
 
   // Update iframeSrc when entering preview to prevent reloads during editing
   useEffect(() => {
@@ -103,11 +106,40 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
   }, [htmlContent, activeTab]);
 
   const handleSave = async (status: NewsletterStatus, scheduleAt?: string) => {
+    // Validate required fields
+    if (!subject.trim()) {
+      alert('❌ Please enter a subject line for your newsletter');
+      return;
+    }
+
+    if (!categoryId) {
+      alert('❌ Please select a category');
+      return;
+    }
+
+    if (selectedGroups.length === 0) {
+      alert('❌ Please select at least one recipient group');
+      return;
+    }
+
+    if (!currentUser.companyId) {
+      alert('❌ Error: User company information is missing. Please refresh the page and try again.');
+      return;
+    }
+
     setIsSaving(true);
     try {
+      // Debug: Log current user info
+      console.log('🔍 Current user creating newsletter:', {
+        currentUserCompanyId: currentUser.companyId,
+        initialDataCompanyId: initialData?.companyId,
+        willUseCompanyId: initialData?.companyId || currentUser.companyId
+      });
+
       // First save/update the newsletter in Firestore
       const newNewsletter: Newsletter = {
         id: initialData?.id || `n${Date.now()}`,
+        companyId: initialData?.companyId || currentUser.companyId, // Use existing or current user's companyId
         subject,
         htmlContent,
         categoryId,
@@ -122,7 +154,17 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
         newNewsletter.scheduledAt = new Date(scheduleAt).toISOString();
       }
 
+      console.log('💾 Saving newsletter:', {
+        id: newNewsletter.id,
+        companyId: newNewsletter.companyId,
+        subject: newNewsletter.subject,
+        status: newNewsletter.status,
+        categoryId: newNewsletter.categoryId,
+        recipientGroupCount: newNewsletter.recipientGroupIds.length
+      });
+
       await api.saveNewsletter(newNewsletter);
+      console.log('✅ Newsletter saved successfully to company:', newNewsletter.companyId);
 
       // If status is SENT, call Cloud Function to actually send emails
       if (status === NewsletterStatus.SENT) {
@@ -146,10 +188,12 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
         }
       }
 
+      // Only call onSave after ALL operations complete successfully
       onSave();
     } catch (error: any) {
       console.error("Failed to save/send newsletter:", error);
       alert(`❌ Error: ${error.message || 'Failed to send newsletter. Please try again.'}`);
+      // Don't call onSave on error - keep editor open so user can retry
     } finally {
       setIsSaving(false);
     }
@@ -218,7 +262,8 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
       const imageFiles = files.filter(f => f.type.startsWith('image/'));
       if (imageFiles.length > 0) {
         try {
-          const uploadPromises = imageFiles.map(file => api.uploadMedia(file));
+          const companyId = initialData?.companyId || 'default-company';
+          const uploadPromises = imageFiles.map(file => api.uploadMedia(file, companyId));
           const uploadedItems = await Promise.all(uploadPromises);
           setMediaLibrary(prev => [...uploadedItems, ...prev]);
         } catch (error) {
@@ -249,7 +294,8 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
 
       if (imageFiles.length > 0) {
         try {
-          const uploadPromises = imageFiles.map(file => api.uploadMedia(file));
+          const companyId = initialData?.companyId || 'default-company';
+          const uploadPromises = imageFiles.map(file => api.uploadMedia(file, companyId));
           const uploadedItems = await Promise.all(uploadPromises);
           setMediaLibrary(prev => [...uploadedItems, ...prev]);
         } catch (error) {
@@ -260,7 +306,7 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
     }
   };
 
-  const handleScheduleSubmit = () => {
+  const handleScheduleSubmit = async () => {
     if (!scheduledDateTime) {
       alert('Please select a date and time');
       return;
@@ -274,8 +320,10 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
       return;
     }
 
+    // Don't close modal until save completes
+    await handleSave(NewsletterStatus.SCHEDULED, scheduledDateTime);
+    // Only close modal after successful save (handleSave will call onSave which closes editor)
     setShowScheduleModal(false);
-    handleSave(NewsletterStatus.SCHEDULED, scheduledDateTime);
   };
 
   return (
@@ -590,7 +638,15 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
                 value={scheduledDateTime}
                 onChange={(e) => setScheduledDateTime(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                min={new Date().toISOString().slice(0, 16)}
+                min={(() => {
+                  const now = new Date();
+                  const year = now.getFullYear();
+                  const month = String(now.getMonth() + 1).padStart(2, '0');
+                  const day = String(now.getDate()).padStart(2, '0');
+                  const hours = String(now.getHours()).padStart(2, '0');
+                  const minutes = String(now.getMinutes()).padStart(2, '0');
+                  return `${year}-${month}-${day}T${hours}:${minutes}`;
+                })()}
               />
               <p className="text-xs text-gray-500 mt-2">
                 Newsletter will be automatically sent at the scheduled time

@@ -27,6 +27,7 @@ import {
   UnsubscribedUser,
   AuditLogEntry,
   MediaItem,
+  Company,
 } from '../types';
 import * as auditService from './auditService';
 
@@ -38,6 +39,7 @@ const COLLECTIONS = {
   RECIPIENT_GROUPS: 'recipientGroups',
   AUDIT_LOGS: 'auditLogs',
   MEDIA: 'media',
+  COMPANIES: 'companies',
 } as const;
 
 class FirestoreApiService {
@@ -110,10 +112,12 @@ class FirestoreApiService {
       }
 
       // User doesn't exist - create new user with specific ID
+      // For now, we'll default to SITE_ADMIN for the first user, or handle via manual assignment
+      // Ideally, new users should be invited or created by an admin
       const newUser: Omit<User, 'id'> = {
         email: email.toLowerCase(),
         name: name || email.split('@')[0],
-        role: UserRole.NEWSLETTER_CREATOR, // Default role
+        role: UserRole.NEWSLETTER_ADMIN, // Default role, needs to be assigned to a company later
         avatarUrl:
           photoUrl ||
           `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}`,
@@ -138,18 +142,29 @@ class FirestoreApiService {
   }
 
   /**
-   * Get all users
+   * Get all users (optionally filtered by company)
    */
-  async getUsers(): Promise<User[]> {
+  async getUsers(companyId?: string): Promise<User[]> {
     if (!db) throw new Error('Firestore not initialized');
 
     const usersRef = collection(db, COLLECTIONS.USERS);
-    const snapshot = await getDocs(usersRef);
+    let q;
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as User[];
+    if (companyId) {
+      q = query(usersRef, where('companyId', '==', companyId));
+    } else {
+      q = query(usersRef);
+    }
+
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map((doc) => {
+      const data = doc.data() as Partial<User>;
+      return {
+        id: doc.id,
+        ...data,
+      } as User;
+    });
   }
 
   /**
@@ -210,6 +225,84 @@ class FirestoreApiService {
 
     await this.logAction('SYSTEM', 'SYSTEM', 'USER_DELETED', `User ID: ${id}`);
   }
+  // ============================================================================
+  // COMPANY MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Get all companies (Site Admin only)
+   */
+  async getCompanies(): Promise<Company[]> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const companiesRef = collection(db, COLLECTIONS.COMPANIES);
+    const snapshot = await getDocs(companiesRef);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: this.timestampToISO(doc.data().createdAt),
+      updatedAt: this.timestampToISO(doc.data().updatedAt),
+    })) as Company[];
+  }
+
+  /**
+   * Get single company
+   */
+  async getCompany(id: string): Promise<Company | undefined> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const companyRef = doc(db, COLLECTIONS.COMPANIES, id);
+    const snapshot = await getDoc(companyRef);
+
+    if (!snapshot.exists()) {
+      return undefined;
+    }
+
+    const data = snapshot.data();
+    return {
+      id: snapshot.id,
+      ...data,
+      createdAt: this.timestampToISO(data.createdAt),
+      updatedAt: this.timestampToISO(data.updatedAt),
+    } as Company;
+  }
+
+  /**
+   * Create new company
+   */
+  async createCompany(name: string, logoUrl?: string): Promise<Company> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const companiesRef = collection(db, COLLECTIONS.COMPANIES);
+    const docRef = await addDoc(companiesRef, {
+      name,
+      logoUrl,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      id: docRef.id,
+      name,
+      logoUrl,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Update company
+   */
+  async updateCompany(id: string, data: Partial<Company>): Promise<void> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const companyRef = doc(db, COLLECTIONS.COMPANIES, id);
+    await updateDoc(companyRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+  }
 
   // ============================================================================
   // NEWSLETTER MANAGEMENT
@@ -218,15 +311,23 @@ class FirestoreApiService {
   /**
    * Get all newsletters
    */
-  async getNewsletters(): Promise<Newsletter[]> {
+  async getNewsletters(companyId?: string): Promise<Newsletter[]> {
     if (!db) throw new Error('Firestore not initialized');
 
     const newslettersRef = collection(db, COLLECTIONS.NEWSLETTERS);
-    const q = query(newslettersRef, orderBy('updatedAt', 'desc'));
+    let q;
+
+    if (companyId) {
+      q = query(newslettersRef, where('companyId', '==', companyId), orderBy('updatedAt', 'desc'));
+    } else {
+      // Site Admin sees all, or if no companyId provided (should be handled by caller)
+      q = query(newslettersRef, orderBy('updatedAt', 'desc'));
+    }
+
     const snapshot = await getDocs(q);
 
     return snapshot.docs.map((doc) => {
-      const data = doc.data();
+      const data = doc.data() as Newsletter;
       return {
         id: doc.id,
         ...data,
@@ -347,6 +448,7 @@ class FirestoreApiService {
       categoryId: newsletter.categoryId,
       recipientGroupIds: newsletter.recipientGroupIds,
       status: newsletter.status,
+      companyId: newsletter.companyId,
       stats: newsletter.stats || { sent: 0, opened: 0, uniqueOpened: 0, clicked: 0, uniqueClicked: 0, bounced: 0 },
       scheduledAt: newsletter.scheduledAt ? Timestamp.fromDate(new Date(newsletter.scheduledAt)) : null,
       sentAt: newsletter.sentAt ? Timestamp.fromDate(new Date(newsletter.sentAt)) : null,
@@ -441,6 +543,7 @@ class FirestoreApiService {
       categoryId: original.categoryId,
       recipientGroupIds: [], // Reset recipients for safety
       status: NewsletterStatus.DRAFT,
+      companyId: original.companyId,
       stats: { sent: 0, opened: 0, uniqueOpened: 0, clicked: 0, uniqueClicked: 0, bounced: 0 },
       scheduledAt: null,
       sentAt: null,
@@ -554,32 +657,47 @@ class FirestoreApiService {
   /**
    * Get all categories
    */
-  async getCategories(): Promise<Category[]> {
+  async getCategories(companyId?: string): Promise<Category[]> {
     if (!db) throw new Error('Firestore not initialized');
 
+    // Defensive validation: companyId should always be provided
+    // Only Site Admins should query without companyId filter
+    if (!companyId) {
+      console.warn('⚠️ getCategories() called without companyId - this should only happen for Site Admins');
+    }
+
     const categoriesRef = collection(db, COLLECTIONS.CATEGORIES);
-    const snapshot = await getDocs(categoriesRef);
+    let q;
+
+    if (companyId) {
+      q = query(categoriesRef, where('companyId', '==', companyId));
+    } else {
+      q = query(categoriesRef);
+    }
+
+    const snapshot = await getDocs(q);
 
     return snapshot.docs.map((doc) => ({
       id: doc.id,
-      ...doc.data(),
+      ...(doc.data() as Category),
     })) as Category[];
   }
 
   /**
    * Add new category
    */
-  async addCategory(name: string): Promise<Category> {
+  async addCategory(name: string, companyId: string): Promise<Category> {
     if (!db) throw new Error('Firestore not initialized');
 
     const categoriesRef = collection(db, COLLECTIONS.CATEGORIES);
     const docRef = await addDoc(categoriesRef, {
       name,
+      companyId,
       count: 0,
       createdAt: serverTimestamp(),
     });
 
-    const newCategory = { id: docRef.id, name, count: 0 };
+    const newCategory = { id: docRef.id, name, companyId, count: 0 };
 
     // Audit logging
     const userContext = this.getCurrentUserContext();
@@ -697,16 +815,30 @@ class FirestoreApiService {
   /**
    * Get all recipient groups
    */
-  async getGroups(): Promise<RecipientGroup[]> {
+  async getGroups(companyId?: string): Promise<RecipientGroup[]> {
     if (!db) throw new Error('Firestore not initialized');
 
+    // Defensive validation: companyId should always be provided
+    // Only Site Admins should query without companyId filter
+    if (!companyId) {
+      console.warn('⚠️ getGroups() called without companyId - this should only happen for Site Admins');
+    }
+
     const groupsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS);
-    const snapshot = await getDocs(groupsRef);
+    let q;
+
+    if (companyId) {
+      q = query(groupsRef, where('companyId', '==', companyId));
+    } else {
+      q = query(groupsRef);
+    }
+
+    const snapshot = await getDocs(q);
 
     const groups: RecipientGroup[] = [];
 
     for (const docSnap of snapshot.docs) {
-      const groupData = docSnap.data();
+      const groupData = docSnap.data() as RecipientGroup;
 
       // Get recipients from subcollection
       const recipientsRef = collection(
@@ -719,11 +851,12 @@ class FirestoreApiService {
 
       const recipients = recipientsSnapshot.docs.map((recDoc) => ({
         id: recDoc.id,
-        ...recDoc.data(),
+        ...(recDoc.data() as Recipient),
       })) as Recipient[];
 
       groups.push({
         id: docSnap.id,
+        companyId: groupData.companyId,
         name: groupData.name,
         recipientCount: recipients.length,
         recipients,
@@ -736,17 +869,18 @@ class FirestoreApiService {
   /**
    * Add new recipient group
    */
-  async addGroup(name: string): Promise<RecipientGroup> {
+  async addGroup(name: string, companyId: string): Promise<RecipientGroup> {
     if (!db) throw new Error('Firestore not initialized');
 
     const groupsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS);
     const docRef = await addDoc(groupsRef, {
       name,
+      companyId,
       recipientCount: 0,
       createdAt: serverTimestamp(),
     });
 
-    const newGroup = { id: docRef.id, name, recipientCount: 0, recipients: [] };
+    const newGroup = { id: docRef.id, name, companyId, recipientCount: 0, recipients: [] };
 
     // Audit logging
     const userContext = this.getCurrentUserContext();
@@ -842,6 +976,7 @@ class FirestoreApiService {
 
     return {
       id: groupId,
+      companyId: groupSnap.data().companyId,
       name: groupSnap.data().name,
       recipientCount: recipients.length,
       recipients,
@@ -877,6 +1012,7 @@ class FirestoreApiService {
     const groupsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS);
     const newGroupRef = await addDoc(groupsRef, {
       name: newGroupName,
+      companyId: originalGroupData.companyId,
       recipientCount: originalRecipients.length,
       createdAt: serverTimestamp(),
     });
@@ -915,6 +1051,7 @@ class FirestoreApiService {
 
     return {
       id: newGroupRef.id,
+      companyId: originalGroupData.companyId,
       name: newGroupName,
       recipientCount: originalRecipients.length,
       recipients: originalRecipients,
@@ -1059,23 +1196,39 @@ class FirestoreApiService {
   /**
    * Get all media items
    */
-  async getMedia(): Promise<MediaItem[]> {
+  async getMedia(companyId?: string): Promise<MediaItem[]> {
     if (!db) throw new Error('Firestore not initialized');
 
+    // Defensive validation: companyId should always be provided
+    // Only Site Admins should query without companyId filter
+    if (!companyId) {
+      console.warn('⚠️ getMedia() called without companyId - this should only happen for Site Admins');
+    }
+
     const mediaRef = collection(db, COLLECTIONS.MEDIA);
-    const q = query(mediaRef, orderBy('uploadedAt', 'desc'));
+    let q;
+
+    if (companyId) {
+      q = query(mediaRef, where('companyId', '==', companyId), orderBy('uploadedAt', 'desc'));
+    } else {
+      q = query(mediaRef, orderBy('uploadedAt', 'desc'));
+    }
+
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as MediaItem[];
+    return snapshot.docs.map((doc) => {
+      const data = doc.data() as Partial<MediaItem>;
+      return {
+        id: doc.id,
+        ...data,
+      } as MediaItem;
+    });
   }
 
   /**
    * Upload media file
    */
-  async uploadMedia(file: File): Promise<MediaItem> {
+  async uploadMedia(file: File, companyId: string): Promise<MediaItem> {
     if (!db || !storage) throw new Error('Firebase not initialized');
 
     // Upload to Firebase Storage
@@ -1091,6 +1244,7 @@ class FirestoreApiService {
     const mediaItem = {
       url,
       name: file.name,
+      companyId,
       size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
       dimensions: '800x600', // Would need image processing to get actual dimensions
       uploadedAt: serverTimestamp(),
@@ -1121,21 +1275,166 @@ class FirestoreApiService {
   /**
    * Get audit logs
    */
-  async getAuditLogs(): Promise<AuditLogEntry[]> {
+  async getAuditLogs(companyId?: string): Promise<AuditLogEntry[]> {
     if (!db) throw new Error('Firestore not initialized');
 
     const logsRef = collection(db, COLLECTIONS.AUDIT_LOGS);
-    const q = query(logsRef, orderBy('timestamp', 'desc'));
+    let q;
+
+    if (companyId) {
+      q = query(logsRef, where('companyId', '==', companyId), orderBy('timestamp', 'desc'));
+    } else {
+      q = query(logsRef, orderBy('timestamp', 'desc'));
+    }
+
     const snapshot = await getDocs(q);
 
     return snapshot.docs.map((doc) => {
-      const data = doc.data();
+      const data = doc.data() as any;
       return {
         id: doc.id,
         ...data,
         timestamp: this.timestampToISO(data.timestamp),
       } as AuditLogEntry;
     });
+  }
+
+  /**
+   * Get bounced emails (filtered audit logs for EMAIL_BOUNCED action)
+   */
+  async getBounces(newsletterId?: string): Promise<Array<{
+    id: string;
+    recipientEmail: string;
+    errorMessage: string;
+    newsletterId: string;
+    timestamp: string;
+    bounceType: 'hard' | 'soft' | 'unknown';
+    category: string;
+  }>> {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const logsRef = collection(db, COLLECTIONS.AUDIT_LOGS);
+    let q;
+
+    if (newsletterId) {
+      // Query for specific newsletter's bounces
+      q = query(
+        logsRef,
+        where('action', '==', 'EMAIL_BOUNCED'),
+        orderBy('timestamp', 'desc')
+      );
+    } else {
+      // Query all bounces
+      q = query(
+        logsRef,
+        where('action', '==', 'EMAIL_BOUNCED'),
+        orderBy('timestamp', 'desc')
+      );
+    }
+
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs
+      .map((doc) => {
+        const data = doc.data() as any;
+        const details = data.details || {};
+
+        // Filter by newsletterId client-side if specified (since Firestore can't query nested fields easily)
+        if (newsletterId && details.newsletterId !== newsletterId) {
+          return null;
+        }
+
+        const errorMessage = details.errorMessage || 'Unknown error';
+        const bounceType = this.categorizeBounceType(errorMessage);
+        const category = this.categorizeBounceReason(errorMessage);
+
+        return {
+          id: doc.id,
+          recipientEmail: details.recipientEmail || data.targetName || 'Unknown',
+          errorMessage,
+          newsletterId: details.newsletterId || 'Unknown',
+          timestamp: this.timestampToISO(data.timestamp),
+          bounceType,
+          category,
+        };
+      })
+      .filter((bounce): bounce is NonNullable<typeof bounce> => bounce !== null);
+  }
+
+  /**
+   * Helper: Categorize bounce type (hard vs soft)
+   */
+  private categorizeBounceType(errorMessage: string): 'hard' | 'soft' | 'unknown' {
+    const lowerError = errorMessage.toLowerCase();
+
+    // Hard bounce indicators
+    const hardBounceIndicators = [
+      'user unknown',
+      'does not exist',
+      'invalid',
+      'no such user',
+      'unknown user',
+      'address rejected',
+      'domain not found',
+      'invalid recipient',
+    ];
+
+    // Soft bounce indicators
+    const softBounceIndicators = [
+      'mailbox full',
+      'quota exceeded',
+      'temporarily',
+      'try again later',
+      'service unavailable',
+      'connection timed out',
+    ];
+
+    if (hardBounceIndicators.some(indicator => lowerError.includes(indicator))) {
+      return 'hard';
+    }
+
+    if (softBounceIndicators.some(indicator => lowerError.includes(indicator))) {
+      return 'soft';
+    }
+
+    return 'unknown';
+  }
+
+  /**
+   * Helper: Categorize bounce reason into user-friendly categories
+   */
+  private categorizeBounceReason(errorMessage: string): string {
+    const lowerError = errorMessage.toLowerCase();
+
+    if (lowerError.includes('user unknown') || lowerError.includes('does not exist') || lowerError.includes('no such user')) {
+      return 'Invalid email address';
+    }
+
+    if (lowerError.includes('mailbox full') || lowerError.includes('quota exceeded')) {
+      return 'Mailbox full';
+    }
+
+    if (lowerError.includes('domain') && (lowerError.includes('not found') || lowerError.includes('unknown'))) {
+      return 'Domain doesn\'t exist';
+    }
+
+    if (lowerError.includes('rejected') || lowerError.includes('blocked')) {
+      return 'Recipient rejected';
+    }
+
+    if (lowerError.includes('spam') || lowerError.includes('blacklist')) {
+      return 'Spam/Blacklist issue';
+    }
+
+    if (lowerError.includes('temporarily') || lowerError.includes('try again')) {
+      return 'Temporary failure';
+    }
+
+    if (lowerError.includes('connection') || lowerError.includes('timeout')) {
+      return 'Connection issue';
+    }
+
+    return 'Other error';
   }
 
   /**

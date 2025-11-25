@@ -13,7 +13,7 @@ node_modules/
 .firebase/
 
 # Environment files
-.env
+# .env
 .env.local
 
 # Logs

@@ -958,6 +958,83 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
               </button>
             </div>
 
+            {/* Company Details */}
+            {(currentCompany.description || currentCompany.website || currentCompany.linkedinUrl || currentCompany.industry || currentCompany.size || currentCompany.location || currentCompany.phone) && (
+              <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Company Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {currentCompany.description && (
+                    <div className="md:col-span-2">
+                      <p className="text-sm font-medium text-gray-500 mb-1">Description</p>
+                      <p className="text-gray-900">{currentCompany.description}</p>
+                    </div>
+                  )}
+
+                  {currentCompany.industry && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">Industry</p>
+                      <p className="text-gray-900">{currentCompany.industry}</p>
+                    </div>
+                  )}
+
+                  {currentCompany.size && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">Company Size</p>
+                      <p className="text-gray-900">{currentCompany.size} employees</p>
+                    </div>
+                  )}
+
+                  {currentCompany.location && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">Location</p>
+                      <p className="text-gray-900">{currentCompany.location}</p>
+                    </div>
+                  )}
+
+                  {currentCompany.phone && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">Phone</p>
+                      <p className="text-gray-900">{currentCompany.phone}</p>
+                    </div>
+                  )}
+
+                  {currentCompany.website && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">Website</p>
+                      <a
+                        href={currentCompany.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 flex items-center"
+                      >
+                        {currentCompany.website}
+                        <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    </div>
+                  )}
+
+                  {currentCompany.linkedinUrl && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">LinkedIn</p>
+                      <a
+                        href={currentCompany.linkedinUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 flex items-center"
+                      >
+                        View LinkedIn Profile
+                        <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl border border-blue-200">
@@ -1287,22 +1364,142 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
 
       {/* Company Modal */}
       {showCompanyModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-bold mb-4">{companyData.id ? 'Edit Company' : 'Create Company'}</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Company Name</label>
-                <input type="text" value={companyData.name || ''} onChange={e => setCompanyData({ ...companyData, name: e.target.value })} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold mb-6">{companyData.id ? 'Edit Company' : 'Create Company'}</h3>
+
+            {/* Basic Information */}
+            <div className="space-y-4 mb-6">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase border-b pb-2">Basic Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Company Name *</label>
+                  <input
+                    type="text"
+                    value={companyData.name || ''}
+                    onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Industry</label>
+                  <input
+                    type="text"
+                    value={companyData.industry || ''}
+                    onChange={e => setCompanyData({ ...companyData, industry: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g., Technology, Healthcare, Finance"
+                  />
+                </div>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Company Size</label>
+                  <select
+                    value={companyData.size || ''}
+                    onChange={e => setCompanyData({ ...companyData, size: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select size</option>
+                    <option value="1-10">1-10 employees</option>
+                    <option value="11-50">11-50 employees</option>
+                    <option value="51-200">51-200 employees</option>
+                    <option value="201-500">201-500 employees</option>
+                    <option value="501-1000">501-1000 employees</option>
+                    <option value="1000+">1000+ employees</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Location</label>
+                  <input
+                    type="text"
+                    value={companyData.location || ''}
+                    onChange={e => setCompanyData({ ...companyData, location: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g., San Francisco, CA"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700">Logo URL</label>
-                <input type="text" value={companyData.logoUrl || ''} onChange={e => setCompanyData({ ...companyData, logoUrl: e.target.value })} className="w-full mt-1 border border-gray-300 rounded-md p-2" />
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  value={companyData.description || ''}
+                  onChange={e => setCompanyData({ ...companyData, description: e.target.value })}
+                  className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  placeholder="Brief description of your company..."
+                />
               </div>
             </div>
-            <div className="mt-6 flex justify-end space-x-3">
-              <button onClick={() => setShowCompanyModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
-              <button onClick={handleSaveCompany} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Company</button>
+
+            {/* Contact & Links */}
+            <div className="space-y-4 mb-6">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase border-b pb-2">Contact & Links</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Website</label>
+                  <input
+                    type="url"
+                    value={companyData.website || ''}
+                    onChange={e => setCompanyData({ ...companyData, website: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">LinkedIn Profile</label>
+                  <input
+                    type="url"
+                    value={companyData.linkedinUrl || ''}
+                    onChange={e => setCompanyData({ ...companyData, linkedinUrl: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://linkedin.com/company/..."
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Phone</label>
+                  <input
+                    type="tel"
+                    value={companyData.phone || ''}
+                    onChange={e => setCompanyData({ ...companyData, phone: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="+1 (555) 123-4567"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Logo URL</label>
+                  <input
+                    type="url"
+                    value={companyData.logoUrl || ''}
+                    onChange={e => setCompanyData({ ...companyData, logoUrl: e.target.value })}
+                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://example.com/logo.png"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end space-x-3 pt-4 border-t">
+              <button
+                onClick={() => setShowCompanyModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveCompany}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+                disabled={!companyData.name}
+              >
+                Save Company
+              </button>
             </div>
           </div>
         </div>

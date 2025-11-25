@@ -14,6 +14,10 @@ This Terraform configuration manages the following GCP resources:
 
 ## Architecture
 
+### Deployment Model
+
+The platform uses a **hybrid deployment architecture**:
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     GCP Project                         │
@@ -23,6 +27,7 @@ This Terraform configuration manages the following GCP resources:
 │  ┌──────────────┐      ┌─────────────────┐           │
 │  │  Cloud Run   │◄─────┤ Artifact        │           │
 │  │  (Frontend)  │      │ Registry        │           │
+│  │  Dockerized  │      │                 │           │
 │  └──────┬───────┘      └─────────────────┘           │
 │         │                                              │
 │         │ reads                                        │
@@ -30,7 +35,7 @@ This Terraform configuration manages the following GCP resources:
 │  ┌──────────────┐      ┌─────────────────┐           │
 │  │   Secret     │◄─────┤  Cloud Build    │           │
 │  │   Manager    │      │  (CI/CD)        │           │
-│  └──────────────┘      └─────────────────┘           │
+│  └──────┬───────┘      └─────────────────┘           │
 │         │                                              │
 │         │ provides secrets to                         │
 │         ▼                                              │
@@ -40,9 +45,35 @@ This Terraform configuration manages the following GCP resources:
 │  │  - Firestore Database                    │        │
 │  │  - Cloud Storage                         │        │
 │  │  - Cloud Functions (Email, Tracking)     │        │
+│  │    └─ Serverless (No Docker)            │        │
 │  └──────────────────────────────────────────┘        │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### Why Backend Uses Firebase Functions (Not Docker)
+
+**Frontend (Cloud Run + Docker)**:
+- Containerized React app with nginx
+- Managed by Terraform
+- Deployed via Cloud Build
+
+**Backend (Firebase Functions - Serverless)**:
+- **No Docker required**: Firebase Functions are fully managed serverless functions
+- **Deployment**: `firebase deploy --only functions` (not managed by Terraform)
+- **Benefits**:
+  - Auto-scaling (scales to zero when idle)
+  - Pay-per-use pricing
+  - Native Firebase integration (Firestore, Auth, Storage)
+  - Built-in triggers (HTTP, Firestore, scheduled)
+  - Fast cold starts with optimized Node.js runtime
+  - Minimal DevOps overhead
+
+**Terraform Scope**:
+- ✅ Cloud Run (frontend)
+- ✅ Artifact Registry
+- ✅ Secret Manager
+- ✅ IAM and service accounts
+- ❌ Firebase Functions (deployed separately via Firebase CLI)
 
 ## Prerequisites
 
@@ -353,7 +384,18 @@ These resources are **NOT** managed by Terraform:
 - **Cloud Functions** (deploy via `firebase deploy --only functions`)
 - **Firebase Authentication Providers** (configure via Firebase Console)
 
-**Reason**: Firebase resources have limited Terraform support and are better managed via Firebase CLI or Console.
+**Why Firebase Functions Are Not Managed by Terraform**:
+
+1. **Serverless Architecture**: Firebase Functions are serverless and don't require containerization or infrastructure provisioning
+2. **Simplified Deployment**: `firebase deploy --only functions` handles everything automatically
+3. **Native Integration**: Better integration with Firebase ecosystem when deployed via Firebase CLI
+4. **Limited Terraform Support**: Firebase resources have limited Terraform provider support
+5. **Deployment Model**: Functions are event-driven and don't need the same infrastructure management as containerized services
+
+**Deployment Separation**:
+- **Terraform**: Manages infrastructure (Cloud Run, Artifact Registry, Secrets, IAM)
+- **Firebase CLI**: Manages Firebase resources (Functions, Firestore, Storage, Auth)
+- **Cloud Build**: Builds and deploys frontend container (references Terraform-managed resources)
 
 ## CI/CD Integration
 

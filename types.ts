@@ -8,6 +8,13 @@ export interface Company {
   id: string;
   name: string;
   logoUrl?: string;
+  description?: string;
+  website?: string;
+  linkedinUrl?: string;
+  industry?: string;
+  size?: string;
+  location?: string;
+  phone?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -285,4 +292,38 @@ export interface ContactRequest {
   status: ContactRequestStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+// ============================================================================
+// AI NEWSLETTER GENERATION TYPES
+// ============================================================================
+
+export enum NewsletterTemplate {
+  PROFESSIONAL = 'Professional',
+  CREATIVE = 'Creative',
+  NEWSLETTER = 'Newsletter',
+  PROMOTIONAL = 'Promotional',
+  MINIMALIST = 'Minimalist'
+}
+
+export enum NewsletterTone {
+  FORMAL = 'Formal',
+  CASUAL = 'Casual',
+  FRIENDLY = 'Friendly',
+  PROFESSIONAL = 'Professional',
+  FUN = 'Fun'
+}
+
+export interface GenerateOptions {
+  template: NewsletterTemplate;
+  description: string;
+  tone?: NewsletterTone;
+  includeImages?: boolean;
+  targetAudience?: string;
+}
+
+export interface GenerateResponse {
+  success: boolean;
+  htmlContent?: string;
+  error?: string;
 }

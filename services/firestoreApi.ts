@@ -1496,6 +1496,41 @@ class FirestoreApiService {
     return result.data;
   }
 
+
+
+  // ============================================================================
+  // AI NEWSLETTER GENERATION
+  // ============================================================================
+
+  /**
+   * Generate newsletter HTML content using AI
+   * Calls Cloud Function that integrates with OpenRouter API
+   */
+  async generateNewsletterContent(options: {
+    template: string;
+    description: string;
+    tone?: string;
+    includeImages?: boolean;
+    targetAudience?: string;
+  }): Promise<string> {
+    if (!functions) {
+      throw new Error('Firebase Functions not initialized');
+    }
+
+    const generateNewsletterFunction = httpsCallable<
+      typeof options,
+      { success: boolean; htmlContent?: string; error?: string }
+    >(functions, 'generateNewsletter');
+
+    const result = await generateNewsletterFunction(options);
+
+    if (!result.data.success || !result.data.htmlContent) {
+      throw new Error(result.data.error || 'Failed to generate newsletter content');
+    }
+
+    return result.data.htmlContent;
+  }
+
   // ============================================================================
   // UTILITY METHODS
   // ============================================================================

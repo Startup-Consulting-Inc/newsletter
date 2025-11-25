@@ -14,8 +14,8 @@ const contactSchema = z.object({
     company: z.string().max(200).optional(),
     role: z.string().max(100).optional(),
     teamSize: z.string().max(50).optional(),
-    subject: z.string().max(200).optional(),
-    message: z.string().max(2000).optional(),
+    subject: z.string().min(1, 'Subject is required').max(200),
+    message: z.string().min(10, 'Message must be at least 10 characters').max(2000),
 });
 
 type ContactFormData = z.infer<typeof contactSchema>;

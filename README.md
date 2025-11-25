@@ -114,6 +114,55 @@ Infrastructure is managed using **Terraform** for automated, repeatable deployme
 - **Service Account**: Uses existing Compute Engine service account for all operations
 - **Static Deployment**: React app built once, served by nginx (no runtime env vars needed)
 
+### Deployment Architecture
+
+The platform uses a **hybrid deployment model** combining containerized frontend with serverless backend:
+
+```
+┌─────────────────────────────────────────────────┐
+│  Frontend (React/Vite)                          │
+│  ├─ Dockerfile ───────────────────────────────► Cloud Run (containerized)
+│  └─ docker-compose.yml                          │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│  Backend (Firebase Functions)                   │
+│  ├─ No Docker involved ──────────────────────► Cloud Functions (serverless)
+│  └─ Deploy via: firebase deploy --only functions│
+└─────────────────────────────────────────────────┘
+```
+
+**Why Firebase Functions Instead of Docker?**
+
+**Frontend (Cloud Run + Docker)**:
+- ✅ Full control over runtime environment
+- ✅ Consistent local/production environment
+- ✅ Static React app benefits from containerization
+- ✅ Better for serving static assets with nginx
+
+**Backend (Firebase Functions - No Docker)**:
+- ✅ **Simplified deployment**: No Dockerfile or container management needed
+- ✅ **Auto-scaling**: Scales to zero when idle, scales up automatically
+- ✅ **Pay-per-use**: Only pay for execution time, not idle instances
+- ✅ **Native Firebase integration**: Direct access to Firestore, Auth, Storage
+- ✅ **Built-in triggers**: HTTP, Firestore, Storage, Pub/Sub, scheduled events
+- ✅ **Fast cold starts**: Optimized Node.js 20 runtime
+- ✅ **Managed runtime**: Google handles security patches and updates
+- ✅ **Secret management**: Built-in Secret Manager integration
+
+**When to Consider Docker for Backend**:
+- Long-running processes (>60 minutes)
+- Custom system dependencies or binaries
+- WebSocket support requirements
+- Need for more control over runtime environment
+- Background workers running continuously
+
+**Current Setup Benefits**:
+- Minimal DevOps overhead for backend
+- Cost-effective for event-driven workloads
+- Leverages Firebase ecosystem integration
+- Perfect for email sending, tracking, and scheduled tasks
+
 ## 💻 Run Locally
 
 ### Prerequisites

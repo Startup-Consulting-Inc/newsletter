@@ -10,7 +10,8 @@ import {
   Menu,
   X,
   Bell,
-  Settings
+  Settings,
+  Headphones
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -19,10 +20,11 @@ interface LayoutProps {
   activeTab: string;
   onNavigate: (tab: string) => void;
   onOpenSettings: () => void;
+  onSupport?: () => void;
   children: React.ReactNode;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab, onNavigate, onOpenSettings, children }) => {
+export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab, onNavigate, onOpenSettings, onSupport, children }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const getNavItems = () => {
@@ -75,6 +77,15 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
               <p className="text-xs text-slate-400 truncate group-hover:text-slate-300">{currentUser.role}</p>
             </div>
           </button>
+          {onSupport && (
+            <button
+              onClick={onSupport}
+              className="flex items-center w-full px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <Headphones className="w-5 h-5 mr-3" />
+              Support
+            </button>
+          )}
           <button
             onClick={onLogout}
             className="flex items-center w-full px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -128,6 +139,18 @@ export const Layout: React.FC<LayoutProps> = ({ currentUser, onLogout, activeTab
                 <Settings className="w-5 h-5 mr-3" />
                 My Profile
               </button>
+              {onSupport && (
+                <button
+                  onClick={() => {
+                    onSupport();
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md"
+                >
+                  <Headphones className="w-5 h-5 mr-3" />
+                  Support
+                </button>
+              )}
               <button
                 onClick={onLogout}
                 className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md"

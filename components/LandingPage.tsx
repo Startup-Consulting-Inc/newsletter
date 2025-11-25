@@ -1,11 +1,15 @@
 import React from 'react';
 import { Mail, BarChart3, Users, Shield, ArrowRight, CheckCircle, Clock, Target, Zap, TrendingUp, Bell, Calendar, Award, Megaphone, Heart, ShoppingCart } from 'lucide-react';
+import { Footer } from './Footer';
 
 interface LandingPageProps {
     onLogin: () => void;
+    onContact: () => void;
+    onPrivacy: () => void;
+    onTerms: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onContact, onPrivacy, onTerms }) => {
     return (
         <div className="min-h-screen bg-white font-sans text-gray-900">
             {/* Navigation */}
@@ -47,7 +51,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                             Start Sending in 5 Minutes <ArrowRight size={20} />
                         </button>
                         <button
-                            onClick={() => window.open('mailto:support@innews.com')}
+                            onClick={onContact}
                             className="px-8 py-4 bg-white text-gray-700 border border-gray-200 rounded-xl font-bold text-lg hover:bg-gray-50 transition-all"
                         >
                             Schedule a Demo
@@ -296,7 +300,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
                             Start Free Today <ArrowRight size={20} />
                         </button>
                         <button
-                            onClick={() => window.open('mailto:support@innews.com')}
+                            onClick={onContact}
                             className="px-8 py-4 bg-blue-500 text-white border-2 border-white rounded-xl font-bold text-lg hover:bg-blue-400 transition-all"
                         >
                             Talk to Sales
@@ -307,11 +311,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin }) => {
             </section>
 
             {/* Footer */}
-            <footer className="bg-gray-50 border-t border-gray-100 py-12">
-                <div className="max-w-7xl mx-auto px-4 text-center text-gray-500">
-                    <p>&copy; {new Date().getFullYear()} InNews Platform. All rights reserved.</p>
-                </div>
-            </footer>
+            <Footer
+                onPrivacy={onPrivacy}
+                onTerms={onTerms}
+                onSupport={onContact}
+            />
         </div>
     );
 };

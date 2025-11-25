@@ -6,6 +6,9 @@ import { ProfilePage } from './components/ProfilePage';
 import { AuthPage } from './components/AuthPage';
 import { Analytics } from './components/Analytics';
 import { LandingPage } from './components/LandingPage';
+import { ContactUsPage } from './components/ContactUsPage';
+import { PrivacyPage } from './components/PrivacyPage';
+import { TermsPage } from './components/TermsPage';
 import { User, Newsletter, NewsletterStatus, Company, UserRole } from './types';
 import { api, isDatabaseSeeded, seedFirestoreData } from './services';
 import { auth } from './services/firebase';
@@ -43,6 +46,9 @@ export default function App() {
   const [editingNewsletter, setEditingNewsletter] = useState<Newsletter | undefined>(undefined);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [showContact, setShowContact] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   // Dashboard Data
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
@@ -457,10 +463,26 @@ export default function App() {
   }
 
   if (!user) {
+    if (showPrivacy) {
+      return <PrivacyPage onClose={() => setShowPrivacy(false)} />;
+    }
+    if (showTerms) {
+      return <TermsPage onClose={() => setShowTerms(false)} />;
+    }
+    if (showContact) {
+      return <ContactUsPage onClose={() => setShowContact(false)} />;
+    }
     if (showLogin) {
       return <AuthPage />;
     }
-    return <LandingPage onLogin={() => setShowLogin(true)} />;
+    return (
+      <LandingPage
+        onLogin={() => setShowLogin(true)}
+        onContact={() => setShowContact(true)}
+        onPrivacy={() => setShowPrivacy(true)}
+        onTerms={() => setShowTerms(true)}
+      />
+    );
   }
 
   const renderContent = () => {
@@ -946,6 +968,11 @@ export default function App() {
     }
   };
 
+  // Show Contact form if requested
+  if (showContact) {
+    return <ContactUsPage onClose={() => setShowContact(false)} />;
+  }
+
   return (
     <Layout
       currentUser={user}
@@ -953,6 +980,7 @@ export default function App() {
       activeTab={activeTab}
       onNavigate={setActiveTab}
       onOpenSettings={() => setActiveTab('profile')}
+      onSupport={() => setShowContact(true)}
     >
       {renderContent()}
     </Layout>

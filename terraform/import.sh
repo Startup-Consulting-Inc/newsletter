@@ -1,0 +1,28 @@
+#!/bin/bash
+PROJECT_ID="clearly-478614"
+REGION="us-west1"
+
+# Only import secrets (8 total - skipping VITE_FIREBASE_PROJECT_ID if it doesn't exist as a secret)
+terraform import google_secret_manager_secret.vite_firebase_api_key projects/$PROJECT_ID/secrets/VITE_FIREBASE_API_KEY
+terraform import google_secret_manager_secret.vite_firebase_auth_domain projects/$PROJECT_ID/secrets/VITE_FIREBASE_AUTH_DOMAIN
+terraform import google_secret_manager_secret.vite_firebase_storage_bucket projects/$PROJECT_ID/secrets/VITE_FIREBASE_STORAGE_BUCKET
+terraform import google_secret_manager_secret.vite_firebase_messaging_sender_id projects/$PROJECT_ID/secrets/VITE_FIREBASE_MESSAGING_SENDER_ID
+terraform import google_secret_manager_secret.vite_firebase_app_id projects/$PROJECT_ID/secrets/VITE_FIREBASE_APP_ID
+terraform import google_secret_manager_secret.gmail_user projects/$PROJECT_ID/secrets/GMAIL_USER
+terraform import google_secret_manager_secret.gmail_app_password projects/$PROJECT_ID/secrets/GMAIL_APP_PASSWORD
+terraform import google_secret_manager_secret.admin_email projects/$PROJECT_ID/secrets/ADMIN_EMAIL
+
+# Import secret versions
+terraform import google_secret_manager_secret_version.vite_firebase_api_key projects/$PROJECT_ID/secrets/VITE_FIREBASE_API_KEY/versions/latest
+terraform import google_secret_manager_secret_version.vite_firebase_auth_domain projects/$PROJECT_ID/secrets/VITE_FIREBASE_AUTH_DOMAIN/versions/latest
+terraform import google_secret_manager_secret_version.vite_firebase_storage_bucket projects/$PROJECT_ID/secrets/VITE_FIREBASE_STORAGE_BUCKET/versions/latest
+terraform import google_secret_manager_secret_version.vite_firebase_messaging_sender_id projects/$PROJECT_ID/secrets/VITE_FIREBASE_MESSAGING_SENDER_ID/versions/latest
+terraform import google_secret_manager_secret_version.vite_firebase_app_id projects/$PROJECT_ID/secrets/VITE_FIREBASE_APP_ID/versions/latest
+terraform import google_secret_manager_secret_version.gmail_user projects/$PROJECT_ID/secrets/GMAIL_USER/versions/latest
+terraform import google_secret_manager_secret_version.gmail_app_password projects/$PROJECT_ID/secrets/GMAIL_APP_PASSWORD/versions/latest
+terraform import google_secret_manager_secret_version.admin_email projects/$PROJECT_ID/secrets/ADMIN_EMAIL/versions/latest
+
+# Import Cloud Run service
+terraform import google_cloud_run_v2_service.newsletter projects/$PROJECT_ID/locations/$REGION/services/newsletter
+
+echo "Import complete! Run 'terraform plan' to verify."

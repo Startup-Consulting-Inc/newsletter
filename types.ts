@@ -8,6 +8,13 @@ export interface Company {
   id: string;
   name: string;
   logoUrl?: string;
+  description?: string;
+  website?: string;
+  linkedinUrl?: string;
+  industry?: string;
+  size?: string;
+  location?: string;
+  phone?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -242,4 +249,81 @@ export interface TrackingLog {
   timestamp: string;
   userAgent?: string;
   ipAddress?: string;
+}
+
+// ============================================================================
+// CONTACT REQUEST TYPES
+// ============================================================================
+
+export enum InquiryType {
+  GENERAL = 'GENERAL',
+  SALES = 'SALES',
+  SUPPORT = 'SUPPORT',
+  PARTNERSHIP = 'PARTNERSHIP',
+  PRESS = 'PRESS',
+  QUESTION = 'QUESTION',
+  BUG_REPORT = 'BUG_REPORT',
+  DEMO = 'DEMO',
+  FEATURE_REQUEST = 'FEATURE_REQUEST',
+  OTHER = 'OTHER'
+}
+
+export type ContactRequestStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED';
+
+export interface Attachment {
+  url: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+  path: string; // Storage path
+}
+
+export interface ContactRequest {
+  id: string;              // Auto-generated ID
+  inquiryType: InquiryType;
+  name: string;
+  email: string;
+  company?: string;
+  role?: string;
+  teamSize?: string;
+  subject?: string;
+  message?: string;
+  attachments?: Attachment[];
+  status: ContactRequestStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================================
+// AI NEWSLETTER GENERATION TYPES
+// ============================================================================
+
+export enum NewsletterTemplate {
+  PROFESSIONAL = 'Professional',
+  CREATIVE = 'Creative',
+  NEWSLETTER = 'Newsletter',
+  PROMOTIONAL = 'Promotional',
+  MINIMALIST = 'Minimalist'
+}
+
+export enum NewsletterTone {
+  FORMAL = 'Formal',
+  CASUAL = 'Casual',
+  FRIENDLY = 'Friendly',
+  PROFESSIONAL = 'Professional',
+  FUN = 'Fun'
+}
+
+export interface GenerateOptions {
+  template: NewsletterTemplate;
+  description: string;
+  tone?: NewsletterTone;
+  includeImages?: boolean;
+  targetAudience?: string;
+}
+
+export interface GenerateResponse {
+  success: boolean;
+  htmlContent?: string;
+  error?: string;
 }

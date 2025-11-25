@@ -1,0 +1,48 @@
+# Terraform Variables Configuration
+# Copy this file to terraform.tfvars and fill in your actual values
+# Never commit terraform.tfvars to version control!
+
+# Project Configuration
+project_id       = "clearly-478614"
+region           = "us-west1"
+functions_region = "us-central1"
+
+# Cloud Run Configuration
+service_name            = "newsletter"
+container_image         = "us-west1-docker.pkg.dev/clearly-478614/newsletter/newsletter:latest"
+cloud_run_memory        = "512Mi"
+cloud_run_cpu           = "1"
+cloud_run_min_instances = 0
+cloud_run_max_instances = 10
+cloud_run_port          = 8080
+
+# Frontend Firebase Configuration Secrets
+# Get these values from Firebase Console > Project Settings > General
+vite_firebase_api_key              = "YOUR_FIREBASE_API_KEY"
+vite_firebase_auth_domain          = "YOUR_PROJECT_ID.firebaseapp.com"
+vite_firebase_storage_bucket       = "YOUR_PROJECT_ID.appspot.com"
+vite_firebase_messaging_sender_id  = "YOUR_MESSAGING_SENDER_ID"
+vite_firebase_app_id               = "YOUR_FIREBASE_APP_ID"
+
+# Backend Email Configuration
+# Use Gmail App Password, not your actual Gmail password
+# Generate at: https://myaccount.google.com/apppasswords
+gmail_user         = "jsong@koreatous.com"
+gmail_app_password = "YOUR_GMAIL_APP_PASSWORD"
+admin_email        = "jsong@koreatous.com"
+
+# Artifact Registry
+artifact_registry_repository = "newsletter"
+artifact_registry_location   = "us-west1"
+
+# Cloud Build (Optional)
+enable_cloud_build_trigger = false
+repository_uri            = ""  # e.g., "https://github.com/username/repo"
+branch_name               = "main"
+
+# Resource Labels
+labels = {
+  app         = "newsletter"
+  managed_by  = "terraform"
+  environment = "production"
+}

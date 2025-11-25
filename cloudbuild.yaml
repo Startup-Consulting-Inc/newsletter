@@ -19,8 +19,8 @@ steps:
           --build-arg=VITE_FIREBASE_STORAGE_BUCKET=$$VITE_FIREBASE_STORAGE_BUCKET \
           --build-arg=VITE_FIREBASE_MESSAGING_SENDER_ID=$$VITE_FIREBASE_MESSAGING_SENDER_ID \
           --build-arg=VITE_FIREBASE_APP_ID=$$VITE_FIREBASE_APP_ID \
-          -t gcr.io/$PROJECT_ID/newsletter:$BUILD_ID \
-          -t gcr.io/$PROJECT_ID/newsletter:latest \
+          -t us-west1-docker.pkg.dev/$PROJECT_ID/newsletter/newsletter:$BUILD_ID \
+          -t us-west1-docker.pkg.dev/$PROJECT_ID/newsletter/newsletter:latest \
           .
     secretEnv:
       - 'VITE_FIREBASE_API_KEY'
@@ -30,44 +30,37 @@ steps:
       - 'VITE_FIREBASE_MESSAGING_SENDER_ID'
       - 'VITE_FIREBASE_APP_ID'
 
-  # Step 2: Push the container image to Container Registry
+  # Step 2: Push the container image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/newsletter:$BUILD_ID'
+      - 'us-west1-docker.pkg.dev/$PROJECT_ID/newsletter/newsletter:$BUILD_ID'
 
-  # Step 3: Push the latest tag to Container Registry
+  # Step 3: Push the latest tag to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/newsletter:latest'
+      - 'us-west1-docker.pkg.dev/$PROJECT_ID/newsletter/newsletter:latest'
 
   # Step 4: Deploy container image to Cloud Run
+  # Only updates the container image - all other settings managed by Terraform
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
       - 'newsletter'
-      - '--image=gcr.io/$PROJECT_ID/newsletter:$BUILD_ID'
+      - '--image=us-west1-docker.pkg.dev/$PROJECT_ID/newsletter/newsletter:$BUILD_ID'
       - '--region=us-west1'
-      - '--platform=managed'
-      - '--allow-unauthenticated'
-      - '--port=8080'
-      - '--memory=512Mi'
-      - '--cpu=1'
-      - '--min-instances=0'
-      - '--max-instances=10'
-      - '--timeout=300s'
-      - '--concurrency=80'
 
-# Images to be pushed to Container Registry
+# Images to be pushed to Artifact Registry
 images:
-  - 'gcr.io/$PROJECT_ID/newsletter:$BUILD_ID'
-  - 'gcr.io/$PROJECT_ID/newsletter:latest'
+  - 'us-west1-docker.pkg.dev/$PROJECT_ID/newsletter/newsletter:$BUILD_ID'
+  - 'us-west1-docker.pkg.dev/$PROJECT_ID/newsletter/newsletter:latest'
 
 # Secret Manager integration
-# All secrets are automatically pulled from Google Secret Manager
+# All secrets are automatically pulled from Google Secret Manager at BUILD TIME
+# These are injected as Docker build args and baked into the React/Vite bundle
 availableSecrets:
   secretManager:
     - versionName: projects/$PROJECT_ID/secrets/VITE_FIREBASE_API_KEY/versions/latest

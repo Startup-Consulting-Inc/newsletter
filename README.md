@@ -47,10 +47,11 @@ A comprehensive internal newsletter management system built with React, Vite, an
 
 - **Frontend**: React 18, Vite, TypeScript, Tailwind CSS
 - **Backend**: Firebase (Auth, Firestore, Cloud Functions)
+- **Infrastructure**: Terraform for GCP resource management
 - **Visualization**: Recharts for analytics charts
 - **Icons**: Lucide React
 - **PDF Generation**: Native Browser Print
-- **Deployment**: Google Cloud Build, Cloud Run
+- **Deployment**: Google Cloud Build, Cloud Run, Artifact Registry
 
 ## 📂 Project Structure
 
@@ -64,10 +65,54 @@ A comprehensive internal newsletter management system built with React, Vite, an
 │   ├── types.ts        # TypeScript definitions
 │   └── ...
 ├── functions/          # Backend logic (Email sending, Tracking)
+├── terraform/          # Infrastructure as Code (GCP resources)
 ├── firestore.rules     # Database security rules
+├── firestore.indexes.json  # Firestore composite indexes
 ├── cloudbuild.yaml     # CI/CD configuration
 └── ...
 ```
+
+## 🏗️ Infrastructure
+
+Infrastructure is managed using **Terraform** for automated, repeatable deployments to Google Cloud Platform.
+
+### GCP Resources
+
+- **Cloud Run**: Containerized application hosting
+- **Artifact Registry**: Docker image storage
+- **Secret Manager**: Secure credential storage
+- **Service Accounts**: IAM and access control
+
+### Terraform Setup
+
+1. **Initialize Terraform:**
+   ```bash
+   cd terraform
+   terraform init
+   ```
+
+2. **Configure Variables:**
+   Copy `terraform.tfvars.example` to `terraform.tfvars` and fill in your values:
+   ```bash
+   cp terraform.tfvars.example terraform.tfvars
+   ```
+
+3. **Review Changes:**
+   ```bash
+   terraform plan
+   ```
+
+4. **Apply Infrastructure:**
+   ```bash
+   terraform apply
+   ```
+
+### Architecture Notes
+
+- **Build-time Secrets**: Firebase config injected during Docker build via Cloud Build
+- **Runtime Secrets**: Email credentials accessed by Cloud Functions via Secret Manager
+- **Service Account**: Uses existing Compute Engine service account for all operations
+- **Static Deployment**: React app built once, served by nginx (no runtime env vars needed)
 
 ## 💻 Run Locally
 
@@ -118,19 +163,52 @@ npm run seed:reset
 
 ## 🚀 Deployment
 
-The project is configured for automated deployment using Google Cloud Build and Cloud Run.
+The project uses a multi-step deployment process with Terraform and Cloud Build.
 
-1.  **Trigger Build:**
-    Push to the `main` branch or manually submit a build:
-    ```bash
-    gcloud builds submit --config cloudbuild.yaml .
-    ```
+### Initial Infrastructure Setup
 
-2.  **Cloud Functions:**
-    Deploy Firebase Cloud Functions separately if needed:
-    ```bash
-    firebase deploy --only functions
-    ```
+1. **Deploy Infrastructure with Terraform:**
+
+   ```bash
+   cd terraform
+   terraform init
+   terraform plan
+   terraform apply
+   ```
+
+   This creates:
+   - Cloud Run service
+   - Artifact Registry repository
+   - Secret Manager secrets
+   - IAM bindings
+
+### Application Deployment
+
+1. **Build and Deploy Container:**
+
+   Cloud Build handles building the Docker image and deploying to Cloud Run:
+
+   ```bash
+   gcloud builds submit --config=cloudbuild.yaml
+   ```
+
+   This will:
+   - Pull secrets from Secret Manager
+   - Build Docker image with Firebase config baked in
+   - Push to Artifact Registry
+   - Deploy to Cloud Run (updates image only)
+
+2. **Deploy Firebase Resources:**
+
+   ```bash
+   firebase deploy --only firestore:indexes,firestore:rules,storage,functions
+   ```
+
+### Deployment Workflow
+
+- **Terraform**: Manages infrastructure (one-time or when infrastructure changes)
+- **Cloud Build**: Builds and deploys application code (every code change)
+- **Firebase**: Deploys Firestore rules, indexes, storage rules, and Cloud Functions
 
 ## 🔒 Security
 
@@ -138,6 +216,48 @@ The project is configured for automated deployment using Google Cloud Build and 
 - **Environment Variables**: Sensitive configuration is managed via `.env` files and Cloud Build secrets.
 
 ## 🔄 Recent Updates
+
+### Infrastructure as Code with Terraform (November 2025)
+
+**Implementation**: Complete migration to Terraform-managed infrastructure for Google Cloud Platform resources.
+
+**Infrastructure Components**:
+
+- **Cloud Run Service**: Containerized application deployment with auto-scaling configuration
+- **Artifact Registry**: Docker image storage repository (migrated from Container Registry)
+- **Secret Manager**: Secure storage for Firebase configuration and email credentials
+- **IAM Bindings**: Service account permissions for Cloud Build, Cloud Run, and Cloud Functions
+
+**Architecture**:
+
+- **Build-time Secret Injection**: Firebase configuration pulled from Secret Manager during Docker build and baked into static JavaScript bundle
+- **Service Account Consolidation**: Unified approach using existing Compute Engine service account for all operations
+- **Separation of Concerns**: Terraform manages infrastructure, Cloud Build handles application deployment
+- **Firestore Index Management**: Added composite indexes for auditLogs, media, and newsletters collections
+
+**Terraform Configuration**:
+
+- `main.tf`: Core infrastructure resources and API enablement
+- `secrets.tf`: Secret Manager resources and IAM bindings
+- `variables.tf`: Configurable parameters with sensible defaults
+- `outputs.tf`: Deployment URLs and next steps guidance
+- `backend.tf`: Remote state management configuration
+
+**Deployment Workflow**:
+
+1. **One-time setup**: `terraform apply` creates all GCP resources
+2. **Code changes**: `gcloud builds submit` builds and deploys container
+3. **Infrastructure updates**: Re-run `terraform apply` only when infrastructure changes
+
+**Benefits**:
+
+- Reproducible infrastructure across environments
+- Version-controlled infrastructure changes
+- Automated resource provisioning
+- Clear separation between infrastructure and application code
+- Simplified secret management and access control
+
+**Result**: Infrastructure is now fully automated, documented, and version-controlled using industry-standard Infrastructure as Code practices.
 
 ### Contact Form & Legal Pages (November 2025)
 

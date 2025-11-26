@@ -4,11 +4,13 @@ import fetch from 'node-fetch';
 
 // Validation Schema
 const generateNewsletterSchema = z.object({
-    template: z.enum(['Professional', 'Creative', 'Newsletter', 'Promotional', 'Minimalist']),
+    template: z.enum(['Professional', 'Creative', 'Newsletter', 'Promotional', 'Minimalist']).optional().nullable(),
     description: z.string().min(10).max(5000),
     tone: z.enum(['Formal', 'Casual', 'Friendly', 'Professional', 'Fun']).optional().nullable(),
     includeImages: z.boolean().optional().nullable(),
     targetAudience: z.string().max(200).optional().nullable(),
+    htmlTemplate: z.string().optional().nullable(), // User-uploaded HTML template
+    customPromptAdditions: z.string().max(2000).optional().nullable(), // Additional AI instructions
 });
 
 // Template-specific system prompts
@@ -30,7 +32,7 @@ export const generateNewsletter = functions.https.onCall(async (data, context) =
         // Validate Input
         const validatedData = generateNewsletterSchema.parse(data);
 
-        const { template, description, tone = 'Professional', includeImages = true, targetAudience } = validatedData;
+        const { template, description, tone = 'Professional', includeImages = true, targetAudience, htmlTemplate, customPromptAdditions } = validatedData;
 
         // Get OpenRouter API credentials
         const apiKey = process.env.OPENROUTER_API_KEY;
@@ -40,14 +42,58 @@ export const generateNewsletter = functions.https.onCall(async (data, context) =
             throw new Error('OpenRouter API key not configured');
         }
 
-        // Build the prompt
-        const templatePrompt = TEMPLATE_PROMPTS[template as keyof typeof TEMPLATE_PROMPTS];
-        const audienceContext = targetAudience ? `Target audience: ${targetAudience}` : '';
-        const imageInstructions = includeImages
-            ? 'Include image placeholders using <img> tags with descriptive alt text and placeholder src="https://via.placeholder.com/600x400?text=Image+Placeholder".'
-            : 'Do not include any images.';
+        // Build the prompt based on whether user provided custom HTML template
+        let systemPrompt: string;
+        let userPrompt: string;
 
-        const systemPrompt = `You are an expert HTML newsletter designer and content writer. You create professional, responsive email newsletters that work across all email clients.
+        if (htmlTemplate) {
+            // Use uploaded HTML template approach
+            const audienceContext = targetAudience ? `Target audience: ${targetAudience}` : '';
+            const imageInstructions = includeImages
+                ? 'Maintain or add image placeholders using <img> tags with descriptive alt text and placeholder src="https://via.placeholder.com/600x400?text=Image+Placeholder".'
+                : 'Remove any existing images and do not add new ones.';
+
+            systemPrompt = `You are an expert HTML newsletter content editor. You modify existing HTML newsletter templates to match new content requirements while preserving the original design and structure.
+
+IMPORTANT REQUIREMENTS:
+1. PRESERVE the original HTML structure, layout, and styling
+2. Update ONLY the text content to match the user's description
+3. Keep all inline CSS styles exactly as they are
+4. Maintain the original design, colors, fonts, and spacing
+5. Use table-based layouts (do not change to divs/flexbox)
+6. Return COMPLETE, VALID HTML (including <!DOCTYPE html>, <html>, <head>, <body> tags)
+7. Do NOT include markdown formatting, code blocks, or explanations
+8. Return ONLY the modified HTML code, nothing else
+
+${audienceContext}
+${imageInstructions}
+${customPromptAdditions ? `\nADDITIONAL INSTRUCTIONS:\n${customPromptAdditions}` : ''}
+
+RESEARCH INSTRUCTIONS:
+- If the content requires current information, recent news, or factual data, indicate that research would be needed
+- Use placeholder data if real-time information is not available
+- Focus on creating high-quality content that fits the existing structure`;
+
+            userPrompt = `Here is the HTML template to modify:
+
+${htmlTemplate}
+
+---
+
+Update the content of this template based on this description:
+
+${description}
+
+Remember to return ONLY the complete modified HTML code. Preserve the design and structure, but update the content to match the description.`;
+        } else {
+            // Use traditional template generation approach
+            const templatePrompt = template ? TEMPLATE_PROMPTS[template as keyof typeof TEMPLATE_PROMPTS] : TEMPLATE_PROMPTS.Professional;
+            const audienceContext = targetAudience ? `Target audience: ${targetAudience}` : '';
+            const imageInstructions = includeImages
+                ? 'Include image placeholders using <img> tags with descriptive alt text and placeholder src="https://via.placeholder.com/600x400?text=Image+Placeholder".'
+                : 'Do not include any images.';
+
+            systemPrompt = `You are an expert HTML newsletter designer and content writer. You create professional, responsive email newsletters that work across all email clients.
 
 IMPORTANT REQUIREMENTS:
 1. Generate COMPLETE, VALID HTML (including <!DOCTYPE html>, <html>, <head>, <body> tags)
@@ -77,11 +123,12 @@ Email Compatibility:
 - Set explicit widths in pixels
 - Include proper alt text for images`;
 
-        const userPrompt = `Create a newsletter based on this description:
+            userPrompt = `Create a newsletter based on this description:
 
 ${description}
 
 Remember to return ONLY the complete HTML code with inline styles. No markdown, no explanations, just the HTML.`;
+        }
 
         console.log('🚀 Calling OpenRouter API...');
 

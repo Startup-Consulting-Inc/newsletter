@@ -29,8 +29,11 @@ import {
   AuditLogEntry,
   MediaItem,
   Company,
-  ContactRequest,
   Attachment,
+  NewsletterTemplateConfig,
+  NewsletterTemplate,
+  NewsletterTone,
+  GenerateOptions,
 } from '../types';
 import * as auditService from './auditService';
 
@@ -43,6 +46,7 @@ const COLLECTIONS = {
   AUDIT_LOGS: 'auditLogs',
   MEDIA: 'media',
   COMPANIES: 'companies',
+  TEMPLATE_CONFIGS: 'templateConfigs',
 } as const;
 
 class FirestoreApiService {
@@ -812,6 +816,150 @@ class FirestoreApiService {
   }
 
   // ============================================================================
+  // TEMPLATE CONFIG MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Get all template configs for a company
+   */
+  async getTemplateConfigs(companyId?: string): Promise<NewsletterTemplateConfig[]> {
+    try {
+      const q = companyId
+        ? query(collection(db, COLLECTIONS.TEMPLATE_CONFIGS), where('companyId', '==', companyId), orderBy('name'))
+        : query(collection(db, COLLECTIONS.TEMPLATE_CONFIGS), orderBy('name'));
+
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as NewsletterTemplateConfig));
+    } catch (error) {
+      console.error('Error fetching template configs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a single template config by ID
+   */
+  async getTemplateConfig(id: string): Promise<NewsletterTemplateConfig | null> {
+    try {
+      const docRef = doc(db, COLLECTIONS.TEMPLATE_CONFIGS, id);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        return { id: docSnap.id, ...docSnap.data() } as NewsletterTemplateConfig;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching template config:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get template config by category ID
+   */
+  async getTemplateByCategory(categoryId: string, companyId: string): Promise<NewsletterTemplateConfig | null> {
+    try {
+      const q = query(
+        collection(db, COLLECTIONS.TEMPLATE_CONFIGS),
+        where('companyId', '==', companyId),
+        where('categoryIds', 'array-contains', categoryId)
+      );
+
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return { id: doc.id, ...doc.data() } as NewsletterTemplateConfig;
+      }
+
+      // If no template found for category, return default template
+      const defaultQuery = query(
+        collection(db, COLLECTIONS.TEMPLATE_CONFIGS),
+        where('companyId', '==', companyId),
+        where('isDefault', '==', true)
+      );
+
+      const defaultSnapshot = await getDocs(defaultQuery);
+      if (!defaultSnapshot.empty) {
+        const doc = defaultSnapshot.docs[0];
+        return { id: doc.id, ...doc.data() } as NewsletterTemplateConfig;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error fetching template by category:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new template config
+   */
+  async createTemplateConfig(data: Omit<NewsletterTemplateConfig, 'id' | 'createdAt' | 'updatedAt'>): Promise<NewsletterTemplateConfig> {
+    try {
+      // Filter out undefined values (Firestore doesn't accept undefined)
+      const cleanedData = Object.fromEntries(
+        Object.entries(data).filter(([_, value]) => value !== undefined)
+      ) as Omit<NewsletterTemplateConfig, 'id' | 'createdAt' | 'updatedAt'>;
+
+      const newTemplate: Omit<NewsletterTemplateConfig, 'id'> = {
+        ...cleanedData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const docRef = await addDoc(collection(db, COLLECTIONS.TEMPLATE_CONFIGS), newTemplate);
+
+      // TODO: Add specific audit logging for template operations
+
+      return { id: docRef.id, ...newTemplate };
+    } catch (error) {
+      console.error('Error creating template config:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing template config
+   */
+  async updateTemplateConfig(id: string, data: Partial<Omit<NewsletterTemplateConfig, 'id' | 'companyId' | 'createdAt'>>): Promise<void> {
+    try {
+      const docRef = doc(db, COLLECTIONS.TEMPLATE_CONFIGS, id);
+
+      // Filter out undefined values (Firestore doesn't accept undefined)
+      const cleanedData = Object.fromEntries(
+        Object.entries(data).filter(([_, value]) => value !== undefined)
+      );
+
+      const updateData = {
+        ...cleanedData,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await updateDoc(docRef, updateData);
+
+      // TODO: Add specific audit logging for template operations
+    } catch (error) {
+      console.error('Error updating template config:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a template config
+   */
+  async deleteTemplateConfig(id: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, COLLECTIONS.TEMPLATE_CONFIGS, id));
+
+      // TODO: Add specific audit logging for template operations
+    } catch (error) {
+      console.error('Error deleting template config:', error);
+      throw error;
+    }
+  }
+
+  // ============================================================================
   // RECIPIENT GROUP MANAGEMENT
   // ============================================================================
 
@@ -1506,19 +1654,13 @@ class FirestoreApiService {
    * Generate newsletter HTML content using AI
    * Calls Cloud Function that integrates with OpenRouter API
    */
-  async generateNewsletterContent(options: {
-    template: string;
-    description: string;
-    tone?: string;
-    includeImages?: boolean;
-    targetAudience?: string;
-  }): Promise<string> {
+  async generateNewsletterContent(options: GenerateOptions): Promise<string> {
     if (!functions) {
       throw new Error('Firebase Functions not initialized');
     }
 
     const generateNewsletterFunction = httpsCallable<
-      typeof options,
+      GenerateOptions,
       { success: boolean; htmlContent?: string; error?: string }
     >(functions, 'generateNewsletter');
 

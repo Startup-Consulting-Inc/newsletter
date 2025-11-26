@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, googleProvider, firebaseConfig } from '../services/firebase';
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { Lock, Mail, ArrowRight, AlertCircle, Settings, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, Settings, ExternalLink } from 'lucide-react';
 
 export const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);

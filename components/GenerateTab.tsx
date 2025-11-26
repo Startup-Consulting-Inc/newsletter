@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
-import { Sparkles, Loader2, AlertCircle } from 'lucide-react';
-import { NewsletterTemplate, NewsletterTone, GenerateOptions } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Loader2, AlertCircle, Wand2 } from 'lucide-react';
+import { NewsletterTemplate, NewsletterTone, GenerateOptions, Category } from '../types';
 import { api } from '../services';
 
 interface GenerateTabProps {
+  categories: Category[];
+  currentUser: { companyId?: string };
+  selectedCategoryId?: string;
+  onCategoryChange?: (categoryId: string) => void;
   onGenerate: (htmlContent: string) => void;
 }
 
-export const GenerateTab: React.FC<GenerateTabProps> = ({ onGenerate }) => {
+export const GenerateTab: React.FC<GenerateTabProps> = ({
+  categories,
+  currentUser,
+  selectedCategoryId,
+  onCategoryChange,
+  onGenerate
+}) => {
+  const [categoryId, setCategoryId] = useState(selectedCategoryId || '');
   const [template, setTemplate] = useState<NewsletterTemplate>(NewsletterTemplate.PROFESSIONAL);
   const [description, setDescription] = useState('');
   const [tone, setTone] = useState<NewsletterTone>(NewsletterTone.PROFESSIONAL);
@@ -15,6 +26,60 @@ export const GenerateTab: React.FC<GenerateTabProps> = ({ onGenerate }) => {
   const [includeImages, setIncludeImages] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadedTemplateName, setLoadedTemplateName] = useState<string | null>(null);
+  const [loadedTemplateConfig, setLoadedTemplateConfig] = useState<any>(null);
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+
+  // Load template when category changes
+  useEffect(() => {
+    const loadTemplateFromCategory = async () => {
+      if (!categoryId || !currentUser.companyId) {
+        setLoadedTemplateName(null);
+        setLoadedTemplateConfig(null);
+        return;
+      }
+
+      setIsLoadingTemplate(true);
+      try {
+        const templateConfig = await api.getTemplateByCategory(categoryId, currentUser.companyId);
+
+        if (templateConfig) {
+          // Auto-populate form fields from template
+          setIncludeImages(templateConfig.includeImages);
+          if (templateConfig.targetAudience) {
+            setTargetAudience(templateConfig.targetAudience);
+          }
+          setLoadedTemplateName(templateConfig.name);
+          setLoadedTemplateConfig(templateConfig);
+        } else {
+          setLoadedTemplateName(null);
+          setLoadedTemplateConfig(null);
+        }
+      } catch (err) {
+        console.error('Error loading template:', err);
+        setLoadedTemplateName(null);
+        setLoadedTemplateConfig(null);
+      } finally {
+        setIsLoadingTemplate(false);
+      }
+    };
+
+    loadTemplateFromCategory();
+  }, [categoryId, currentUser.companyId]);
+
+  // Sync with parent component's category
+  useEffect(() => {
+    if (selectedCategoryId && selectedCategoryId !== categoryId) {
+      setCategoryId(selectedCategoryId);
+    }
+  }, [selectedCategoryId]);
+
+  const handleCategoryChange = (newCategoryId: string) => {
+    setCategoryId(newCategoryId);
+    if (onCategoryChange) {
+      onCategoryChange(newCategoryId);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!description.trim()) {
@@ -27,11 +92,19 @@ export const GenerateTab: React.FC<GenerateTabProps> = ({ onGenerate }) => {
 
     try {
       const options: GenerateOptions = {
-        template,
         description: description.trim(),
-        tone,
         includeImages,
-        targetAudience: targetAudience.trim() || undefined
+        targetAudience: targetAudience.trim() || undefined,
+        // Use uploaded template if available, otherwise use selected template/tone
+        ...(loadedTemplateConfig?.htmlTemplate
+          ? {
+              htmlTemplate: loadedTemplateConfig.htmlTemplate,
+              customPromptAdditions: loadedTemplateConfig.customPromptAdditions
+            }
+          : {
+              template,
+              tone
+            })
       };
 
       const htmlContent = await api.generateNewsletterContent(options);
@@ -58,6 +131,48 @@ export const GenerateTab: React.FC<GenerateTabProps> = ({ onGenerate }) => {
           </div>
         </div>
       </div>
+
+      {/* Category Selection */}
+      {categories.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Category (Optional)
+          </label>
+          <select
+            value={categoryId}
+            onChange={(e) => handleCategoryChange(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isGenerating || isLoadingTemplate}
+          >
+            <option value="">No category (use default settings)</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-gray-500 mt-1">
+            Select a category to auto-load template settings
+          </p>
+        </div>
+      )}
+
+      {/* Template Loaded Indicator */}
+      {loadedTemplateName && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <Wand2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-green-800">
+                <span className="font-medium">Template loaded:</span> {loadedTemplateName}
+              </p>
+              <p className="text-xs text-green-600 mt-0.5">
+                Settings below have been auto-populated. You can still change them manually.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>

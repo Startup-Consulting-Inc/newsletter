@@ -3,12 +3,10 @@ import { User, UserRole } from '../types';
 import {
   LayoutDashboard,
   PenTool,
-  Users,
   FileBarChart,
   ShieldAlert,
   LogOut,
   Menu,
-  X,
   Bell,
   Settings,
   Headphones

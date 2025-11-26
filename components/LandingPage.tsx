@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mail, BarChart3, Users, Shield, ArrowRight, CheckCircle, Clock, Target, Zap, TrendingUp, Bell, Calendar, Award, Megaphone, Heart, ShoppingCart } from 'lucide-react';
+import { Mail, BarChart3, Users, Shield, ArrowRight, CheckCircle, Clock, Target, Zap, TrendingUp, Calendar, Megaphone, Heart, ShoppingCart } from 'lucide-react';
 import { Footer } from './Footer';
 
 interface LandingPageProps {

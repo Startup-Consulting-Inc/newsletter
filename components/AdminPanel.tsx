@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, UserRole, AuditLogEntry, Category, RecipientGroup, Recipient, AuditCategory, AuditSeverity, Company } from '../types';
+import { User, UserRole, AuditLogEntry, Category, RecipientGroup, Recipient, AuditCategory, AuditSeverity, Company, NewsletterTemplateConfig, NewsletterTemplate, NewsletterTone } from '../types';
 import { api } from '../services';
-import { Plus, Search, Trash2, Edit, Download, X, Upload, Users as UsersIcon, List, Copy, Save, Check } from 'lucide-react';
+import { Plus, Trash2, Edit, Download, X, Upload, Users as UsersIcon, List, Copy, Check, FileText, Link as LinkIcon } from 'lucide-react';
 import { BounceReport } from './BounceReport';
 
 interface AdminPanelProps {
@@ -11,12 +11,13 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   const isSiteAdmin = currentUser.role === UserRole.SITE_ADMIN;
 
-  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'bounces' | 'categories' | 'groups' | 'companies' | 'companyProfile'>(
+  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'bounces' | 'categories' | 'templates' | 'groups' | 'companies' | 'companyProfile'>(
     isSiteAdmin ? 'companies' : currentUser.role === UserRole.COMPANY_ADMIN ? 'companyProfile' : 'categories'
   );
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [templates, setTemplates] = useState<NewsletterTemplateConfig[]>([]);
   const [groups, setGroups] = useState<RecipientGroup[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [currentCompany, setCurrentCompany] = useState<Company | undefined>(undefined);
@@ -47,9 +48,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   const [groupsSortBy, setGroupsSortBy] = useState<'name' | 'recipientCount'>('name');
   const [groupsSortDir, setGroupsSortDir] = useState<'asc' | 'desc'>('asc');
 
+  // Templates tab filter/sort state
+  const [templatesSearch, setTemplatesSearch] = useState('');
+  const [templatesSortBy, setTemplatesSortBy] = useState<'name' | 'baseTemplate'>('name');
+  const [templatesSortDir, setTemplatesSortDir] = useState<'asc' | 'desc'>('asc');
+
   // Modals State
   const [showUserModal, setShowUserModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showRecipientModal, setShowRecipientModal] = useState(false);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
@@ -57,7 +64,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
   // Form Data
   const [userData, setUserData] = useState<Partial<User>>({ role: UserRole.NEWSLETTER_ADMIN, name: '', email: '' });
   const [companyData, setCompanyData] = useState<Partial<Company>>({ name: '', logoUrl: '' });
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [categoryName, setCategoryName] = useState('');
+  const [templateData, setTemplateData] = useState<Partial<NewsletterTemplateConfig>>({
+    name: '',
+    htmlTemplate: '',
+    includeImages: true,
+    categoryIds: [],
+  });
   const [groupName, setGroupName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<RecipientGroup | null>(null);
   const [recipientData, setRecipientData] = useState({ email: '', firstName: '', lastName: '' });
@@ -72,6 +86,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
     }
     if (activeTab === 'audit' && (isSiteAdmin || currentUser.role === UserRole.COMPANY_ADMIN)) setLogs(await api.getAuditLogs(isSiteAdmin ? undefined : currentUser.companyId));
     if (activeTab === 'categories') setCategories(await api.getCategories(isSiteAdmin ? undefined : currentUser.companyId));
+    if (activeTab === 'templates') setTemplates(await api.getTemplateConfigs(isSiteAdmin ? undefined : currentUser.companyId));
     if (activeTab === 'groups') setGroups(await api.getGroups(isSiteAdmin ? undefined : currentUser.companyId));
     if (activeTab === 'companies' && isSiteAdmin) setCompanies(await api.getCompanies());
     if (activeTab === 'companyProfile' && currentUser.companyId) {
@@ -295,12 +310,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
     loadData();
   };
 
-  const handleDeleteCompany = async (id: string) => {
-    if (confirm('Delete this company? This will affect all associated users and data.')) {
-      // In a real app, we might want to soft delete or check for dependencies first
-      // For now, we'll just delete the company record
-      // Note: api.deleteCompany is not implemented yet, assuming manual cleanup or future implementation
-      alert('Company deletion is not fully implemented yet.');
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+
+    const file = e.target.files[0];
+    // Basic validation
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      alert('File size must be less than 5MB');
+      return;
+    }
+
+    try {
+      setUploadingLogo(true);
+      // We need a company ID to associate the media with, but for new companies we might not have one yet.
+      // For now, we'll use 'temp' or the current user's company ID if available, 
+      // or just a placeholder since the media collection rules might require it.
+      // However, our simplified rules allow any authenticated user to upload.
+      const companyId = companyData.id || currentUser.companyId || 'temp_logo_upload';
+
+      const mediaItem = await api.uploadMedia(file, companyId);
+      setCompanyData(prev => ({ ...prev, logoUrl: mediaItem.url }));
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      alert('Failed to upload logo');
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -526,6 +565,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
           </>
         )}
         <button onClick={() => setActiveTab('categories')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'categories' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Categories</button>
+        <button onClick={() => setActiveTab('templates')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'templates' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Templates</button>
         <button onClick={() => setActiveTab('groups')} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap ${activeTab === 'groups' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>Recipient Groups</button>
       </div>
     );
@@ -851,6 +891,118 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
           <p className="text-sm text-gray-600 mt-3">
             Showing {filteredAndSortedCategories.length} of {categories.length} categories
           </p>
+        </div>
+      )}
+
+      {activeTab === 'templates' && (
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex flex-col sm:flex-row gap-4 mb-4">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="🔍 Search templates..."
+                value={templatesSearch}
+                onChange={(e) => setTemplatesSearch(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+            <button onClick={() => setShowTemplateModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 whitespace-nowrap">
+              <Plus className="w-4 h-4" />
+              Add Template
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {templates
+              .filter(t => t.name.toLowerCase().includes(templatesSearch.toLowerCase()))
+              .map((template) => (
+                <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                      <h3 className="font-semibold text-gray-900">{template.name}</h3>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setTemplateData(template);
+                          setShowTemplateModal(true);
+                        }}
+                        className="text-gray-400 hover:text-blue-600 p-1"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (confirm(`Delete template "${template.name}"?`)) {
+                            await api.deleteTemplateConfig(template.id);
+                            loadData();
+                          }
+                        }}
+                        className="text-gray-400 hover:text-red-600 p-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {template.description && (
+                    <p className="text-sm text-gray-600 mb-3">{template.description}</p>
+                  )}
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">HTML Template:</span>
+                      <span className="font-medium text-gray-900">
+                        {template.htmlTemplate ? `${(template.htmlTemplate.length / 1024).toFixed(1)}KB` : 'Not set'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Images:</span>
+                      <span className="font-medium text-gray-900">{template.includeImages ? 'Yes' : 'No'}</span>
+                    </div>
+                    {template.targetAudience && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Audience:</span>
+                        <span className="font-medium text-gray-900 truncate ml-2">{template.targetAudience}</span>
+                      </div>
+                    )}
+                    {template.categoryIds && template.categoryIds.length > 0 && (
+                      <div className="pt-2 border-t border-gray-200">
+                        <div className="flex items-center gap-1 text-gray-500 mb-1">
+                          <LinkIcon className="w-3 h-3" />
+                          <span>Linked Categories:</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {template.categoryIds.map(catId => {
+                            const category = categories.find(c => c.id === catId);
+                            return category ? (
+                              <span key={catId} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                                {category.name}
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {template.isDefault && (
+                      <div className="pt-2">
+                        <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded font-medium">
+                          ✓ Default Template
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+          </div>
+
+          {templates.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p>No templates yet. Create your first template!</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1473,14 +1625,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Logo URL</label>
-                  <input
-                    type="url"
-                    value={companyData.logoUrl || ''}
-                    onChange={e => setCompanyData({ ...companyData, logoUrl: e.target.value })}
-                    className="w-full mt-1 border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="https://example.com/logo.png"
-                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Company Logo</label>
+                  <div className="mt-1 flex items-center space-x-4">
+                    {companyData.logoUrl && (
+                      <div className="relative w-12 h-12 rounded-lg border border-gray-200 overflow-hidden">
+                        <img src={companyData.logoUrl} alt="Logo preview" className="w-full h-full object-cover" />
+                        <button
+                          onClick={() => setCompanyData({ ...companyData, logoUrl: '' })}
+                          className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-md hover:bg-red-600"
+                          title="Remove logo"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                    <label className={`flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer ${uploadingLogo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                      {uploadingLogo ? (
+                        <>
+                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4 mr-2 text-gray-500" />
+                          Upload Logo
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        disabled={uploadingLogo}
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">Recommended: Square image, max 5MB</p>
                 </div>
               </div>
             </div>
@@ -1514,6 +1699,257 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
             <div className="mt-6 flex justify-end space-x-3">
               <button onClick={() => setShowCategoryModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>
               <button onClick={handleAddCategory} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <h3 className="text-lg font-bold">{templateData.id ? 'Edit Template' : 'New Template'}</h3>
+              <button onClick={() => {
+                setShowTemplateModal(false);
+                setTemplateData({
+                  name: '',
+                  baseTemplate: NewsletterTemplate.PROFESSIONAL,
+                  tone: NewsletterTone.PROFESSIONAL,
+                  includeImages: true,
+                  categoryIds: [],
+                });
+              }}>
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Template Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Template Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={templateData.name || ''}
+                  onChange={e => setTemplateData({ ...templateData, name: e.target.value })}
+                  placeholder="e.g., Company Announcements Template"
+                  className="w-full border border-gray-300 rounded-md p-2"
+                  required
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description (Optional)
+                </label>
+                <textarea
+                  value={templateData.description || ''}
+                  onChange={e => setTemplateData({ ...templateData, description: e.target.value })}
+                  placeholder="Brief description of when to use this template..."
+                  className="w-full border border-gray-300 rounded-md p-2 min-h-[60px]"
+                  rows={2}
+                />
+              </div>
+
+              {/* HTML Template Upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  HTML Template File <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".html,.htm"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      try {
+                        const text = await file.text();
+                        setTemplateData({ ...templateData, htmlTemplate: text });
+                      } catch (error) {
+                        alert('Failed to read template file');
+                      }
+                    }
+                  }}
+                  className="w-full border border-gray-300 rounded-md p-2 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Upload an HTML file to use as the template base.
+                  {templateData.htmlTemplate && (
+                    <span className="text-green-600 font-medium"> ✓ Template loaded ({(templateData.htmlTemplate.length / 1024).toFixed(1)}KB)</span>
+                  )}
+                </p>
+              </div>
+
+              {/* Include Images Checkbox */}
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="includeImages"
+                  checked={templateData.includeImages ?? true}
+                  onChange={e => setTemplateData({ ...templateData, includeImages: e.target.checked })}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                />
+                <label htmlFor="includeImages" className="ml-2 text-sm text-gray-700">
+                  Include image placeholders by default
+                </label>
+              </div>
+
+              {/* Target Audience */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Target Audience (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={templateData.targetAudience || ''}
+                  onChange={e => setTemplateData({ ...templateData, targetAudience: e.target.value })}
+                  placeholder="e.g., Tech professionals, Marketing managers"
+                  className="w-full border border-gray-300 rounded-md p-2"
+                />
+              </div>
+
+              {/* Custom Prompt Additions */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Custom AI Instructions (Optional)
+                </label>
+                <textarea
+                  value={templateData.customPromptAdditions || ''}
+                  onChange={e => setTemplateData({ ...templateData, customPromptAdditions: e.target.value })}
+                  placeholder="Additional instructions for AI generation..."
+                  className="w-full border border-gray-300 rounded-md p-2 min-h-[60px]"
+                  rows={2}
+                />
+              </div>
+
+              {/* Linked Categories */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Linked Categories (Optional)
+                </label>
+                <div className="border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                  {categories.length === 0 ? (
+                    <p className="text-sm text-gray-500">No categories available</p>
+                  ) : (
+                    categories.map(category => (
+                      <label key={category.id} className="flex items-center hover:bg-gray-50 p-1 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={templateData.categoryIds?.includes(category.id) || false}
+                          onChange={e => {
+                            const currentIds = templateData.categoryIds || [];
+                            if (e.target.checked) {
+                              setTemplateData({ ...templateData, categoryIds: [...currentIds, category.id] });
+                            } else {
+                              setTemplateData({ ...templateData, categoryIds: currentIds.filter(id => id !== category.id) });
+                            }
+                          }}
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">{category.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  When a newsletter uses these categories, this template will be auto-selected
+                </p>
+              </div>
+
+              {/* Is Default Checkbox */}
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="isDefault"
+                  checked={templateData.isDefault || false}
+                  onChange={e => setTemplateData({ ...templateData, isDefault: e.target.checked })}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                />
+                <label htmlFor="isDefault" className="ml-2 text-sm text-gray-700">
+                  Set as default template for this company
+                </label>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex justify-end space-x-3 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setTemplateData({
+                    name: '',
+                    baseTemplate: NewsletterTemplate.PROFESSIONAL,
+                    tone: NewsletterTone.PROFESSIONAL,
+                    includeImages: true,
+                    categoryIds: [],
+                  });
+                }}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!templateData.name?.trim()) {
+                    alert('Template name is required');
+                    return;
+                  }
+                  if (!templateData.htmlTemplate?.trim()) {
+                    alert('Please upload an HTML template file');
+                    return;
+                  }
+                  if (!currentUser.companyId) {
+                    alert('Company ID is missing');
+                    return;
+                  }
+
+                  try {
+                    if (templateData.id) {
+                      // Update existing template
+                      await api.updateTemplateConfig(templateData.id, {
+                        name: templateData.name,
+                        description: templateData.description,
+                        htmlTemplate: templateData.htmlTemplate!,
+                        includeImages: templateData.includeImages!,
+                        targetAudience: templateData.targetAudience,
+                        customPromptAdditions: templateData.customPromptAdditions,
+                        categoryIds: templateData.categoryIds,
+                        isDefault: templateData.isDefault,
+                      });
+                    } else {
+                      // Create new template
+                      await api.createTemplateConfig({
+                        companyId: currentUser.companyId,
+                        name: templateData.name,
+                        description: templateData.description,
+                        htmlTemplate: templateData.htmlTemplate!,
+                        includeImages: templateData.includeImages!,
+                        targetAudience: templateData.targetAudience,
+                        customPromptAdditions: templateData.customPromptAdditions,
+                        categoryIds: templateData.categoryIds,
+                        isDefault: templateData.isDefault,
+                      });
+                    }
+
+                    setShowTemplateModal(false);
+                    setTemplateData({
+                      name: '',
+                      htmlTemplate: '',
+                      includeImages: true,
+                      categoryIds: [],
+                    });
+                    loadData();
+                  } catch (error: any) {
+                    alert(`Failed to save template: ${error.message}`);
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={!templateData.name?.trim() || !templateData.htmlTemplate?.trim()}
+              >
+                {templateData.id ? 'Update' : 'Create'} Template
+              </button>
             </div>
           </div>
         </div>

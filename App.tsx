@@ -14,23 +14,14 @@ import { api, isDatabaseSeeded, seedFirestoreData } from './services';
 import { auth } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  LayoutDashboard,
   PenTool,
   Users,
-  Settings,
-  LogOut,
   Plus,
-  Search,
-  Filter,
-  MoreVertical,
-  ChevronDown,
-  Loader2,
   Mail,
   Calendar,
   BarChart3,
   Copy,
   Trash2,
-  Download,
   FileCode,
   AlertCircle,
   FileText

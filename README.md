@@ -5,6 +5,7 @@ A comprehensive internal newsletter management system built with React, Vite, an
 ## 🚀 Features
 
 ### Newsletter Management
+
 - **Create & Edit**: Rich text editor with image support, placeholders, and real-time preview.
 - **Status Tracking**: Manage newsletters through Draft, Scheduled, Sending, Sent, and Paused states.
 - **Smart Scheduling**: Schedule newsletters with timezone-aware date picker supporting same-day scheduling for future times.
@@ -16,11 +17,13 @@ A comprehensive internal newsletter management system built with React, Vite, an
 - **Multi-Tenant Filtering**: Site Admins can filter and view newsletters by company with company name display.
 
 ### Recipient Management
+
 - **Group Operations**: Create, organize, and **duplicate** recipient groups.
 - **Recipient Control**: Add, **edit**, and **delete** individual recipients within groups.
 - **Unsubscribe System**: Automated unsubscribe handling with import protection.
 
 ### Analytics & Tracking
+
 - **Dashboard**: Visual overview of newsletter performance with charts and key metrics.
 - **Detailed Metrics**: Track open rates, click rates, and bounce rates.
 - **Bounce Email Tracking**: Comprehensive bounce reporting with hard/soft bounce categorization, filterable by newsletter, bounce type, and error category.
@@ -86,6 +89,7 @@ Infrastructure is managed using **Terraform** for automated, repeatable deployme
 ### Terraform Setup
 
 1. **Initialize Terraform:**
+
    ```bash
    cd terraform
    terraform init
@@ -93,16 +97,19 @@ Infrastructure is managed using **Terraform** for automated, repeatable deployme
 
 2. **Configure Variables:**
    Copy `terraform.tfvars.example` to `terraform.tfvars` and fill in your values:
+
    ```bash
    cp terraform.tfvars.example terraform.tfvars
    ```
 
 3. **Review Changes:**
+
    ```bash
    terraform plan
    ```
 
 4. **Apply Infrastructure:**
+
    ```bash
    terraform apply
    ```
@@ -135,12 +142,14 @@ The platform uses a **hybrid deployment model** combining containerized frontend
 **Why Firebase Functions Instead of Docker?**
 
 **Frontend (Cloud Run + Docker)**:
+
 - ✅ Full control over runtime environment
 - ✅ Consistent local/production environment
 - ✅ Static React app benefits from containerization
 - ✅ Better for serving static assets with nginx
 
 **Backend (Firebase Functions - No Docker)**:
+
 - ✅ **Simplified deployment**: No Dockerfile or container management needed
 - ✅ **Auto-scaling**: Scales to zero when idle, scales up automatically
 - ✅ **Pay-per-use**: Only pay for execution time, not idle instances
@@ -151,6 +160,7 @@ The platform uses a **hybrid deployment model** combining containerized frontend
 - ✅ **Secret management**: Built-in Secret Manager integration
 
 **When to Consider Docker for Backend**:
+
 - Long-running processes (>60 minutes)
 - Custom system dependencies or binaries
 - WebSocket support requirements
@@ -158,6 +168,7 @@ The platform uses a **hybrid deployment model** combining containerized frontend
 - Background workers running continuously
 
 **Current Setup Benefits**:
+
 - Minimal DevOps overhead for backend
 - Cost-effective for event-driven workloads
 - Leverages Firebase ecosystem integration
@@ -166,25 +177,29 @@ The platform uses a **hybrid deployment model** combining containerized frontend
 ## 💻 Run Locally
 
 ### Prerequisites
+
 - Node.js (v16 or higher)
 - npm or yarn
 - Firebase CLI (`npm install -g firebase-tools`)
 
 ### Installation
 
-1.  **Clone the repository:**
+1. **Clone the repository:**
+
     ```bash
     git clone <repository-url>
     cd newsletter
     ```
 
-2.  **Install dependencies:**
+2. **Install dependencies:**
+
     ```bash
     npm install
     ```
 
-3.  **Configure Environment Variables:**
+3. **Configure Environment Variables:**
     Create a `.env` file in the root directory with your Firebase configuration:
+
     ```env
     VITE_FIREBASE_API_KEY=your_api_key
     VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
@@ -194,18 +209,24 @@ The platform uses a **hybrid deployment model** combining containerized frontend
     VITE_FIREBASE_APP_ID=your_app_id
     ```
 
-4.  **Run the Development Server:**
+4. **Run the Development Server:**
+
     ```bash
     npm run dev
     ```
+
     The app will be available at `http://localhost:5173`.
 
 ### Database Seeding
+
 To populate the database with initial test data:
+
 ```bash
 npm run seed
 ```
+
 To reset and re-seed:
+
 ```bash
 npm run seed:reset
 ```
@@ -307,6 +328,29 @@ The project uses a multi-step deployment process with Terraform and Cloud Build.
 - Simplified secret management and access control
 
 **Result**: Infrastructure is now fully automated, documented, and version-controlled using industry-standard Infrastructure as Code practices.
+
+### Company Logo Upload & Environment Variable Fixes (November 2025)
+
+**Company Logo Upload**:
+
+- Replaced manual "Logo URL" text input with file upload functionality in Company Edit modal
+- Integrated with existing `uploadMedia()` API for Firebase Storage uploads
+- Added logo preview with remove button in edit modal
+- Upload progress indicator with loading state
+- File validation: image types only, 5MB size limit
+- Automatic URL assignment to company record after successful upload
+- Logos stored in Firebase Storage at `/media/{timestamp}_{filename}`
+
+**Environment Variable Configuration**:
+
+- Fixed "OpenRouter API key not configured" error in `generateNewsletter` Cloud Function
+- Removed `.env` from `functions/.gitignore` to allow deployment with Cloud Functions
+- Installed and configured `dotenv` package in functions directory
+- Added `dotenv.config()` to `functions/src/index.ts` for proper environment variable loading
+- Simplified Firestore security rules for debugging (newsletters and media collections)
+- Simplified Storage security rules to allow authenticated user uploads
+
+**Result**: Company admins can now upload logos directly through the UI, and Cloud Functions properly access environment variables for API integrations.
 
 ### Contact Form & Legal Pages (November 2025)
 

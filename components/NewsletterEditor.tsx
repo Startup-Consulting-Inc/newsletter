@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Newsletter, NewsletterStatus, Category, RecipientGroup, MediaItem } from '../types';
-import { Save, Send, Clock, Image as ImageIcon, Eye, Code, UploadCloud, CheckCircle2, XCircle, Trash2, ArrowLeft, Link as LinkIcon, AlertTriangle, Sparkles } from 'lucide-react';
+import { Save, Send, Clock, Image as ImageIcon, Eye, Code, UploadCloud, CheckCircle2, XCircle, ArrowLeft, AlertTriangle, Sparkles } from 'lucide-react';
 import { api } from '../services';
 import { functions } from '../services/firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -130,13 +130,6 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
 
     setIsSaving(true);
     try {
-      // Debug: Log current user info
-      console.log('🔍 Current user creating newsletter:', {
-        currentUserCompanyId: currentUser.companyId,
-        initialDataCompanyId: initialData?.companyId,
-        willUseCompanyId: initialData?.companyId || currentUser.companyId
-      });
-
       // First save/update the newsletter in Firestore
       const newNewsletter: Newsletter = {
         id: initialData?.id || `n${Date.now()}`,
@@ -155,17 +148,7 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
         newNewsletter.scheduledAt = new Date(scheduleAt).toISOString();
       }
 
-      console.log('💾 Saving newsletter:', {
-        id: newNewsletter.id,
-        companyId: newNewsletter.companyId,
-        subject: newNewsletter.subject,
-        status: newNewsletter.status,
-        categoryId: newNewsletter.categoryId,
-        recipientGroupCount: newNewsletter.recipientGroupIds.length
-      });
-
       await api.saveNewsletter(newNewsletter);
-      console.log('✅ Newsletter saved successfully to company:', newNewsletter.companyId);
 
       // If status is SENT, call Cloud Function to actually send emails
       if (status === NewsletterStatus.SENT) {
@@ -173,12 +156,8 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
           throw new Error('Firebase Functions not initialized');
         }
 
-        console.log('🚀 Calling Cloud Function to send newsletter...');
-
         const sendNewsletter = httpsCallable(functions, 'sendNewsletterFunction');
         const result = await sendNewsletter({ newsletterId: newNewsletter.id });
-
-        console.log('✅ Newsletter sent:', result.data);
 
         // Show success message
         const data = result.data as any;
@@ -446,6 +425,10 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
               <div className="absolute inset-0 p-8 overflow-y-auto">
                 <div className="max-w-4xl mx-auto">
                   <GenerateTab
+                    categories={categories}
+                    currentUser={currentUser}
+                    selectedCategoryId={categoryId}
+                    onCategoryChange={(newCategoryId) => setCategoryId(newCategoryId)}
                     onGenerate={(generatedHtml: string) => {
                       setHtmlContent(generatedHtml);
                       setActiveTab('edit');

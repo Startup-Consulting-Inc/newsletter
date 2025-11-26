@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Newsletter, NewsletterStatus, TrackingLog } from '../types';
+import React, { useMemo, useState } from 'react';
+import { Newsletter, TrackingLog } from '../types';
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, TrendingDown, Mail, MousePointer, AlertCircle, BarChart3, Eye, X, ExternalLink } from 'lucide-react';
 import { api } from '../services';

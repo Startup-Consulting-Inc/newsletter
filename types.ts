@@ -43,6 +43,11 @@ export interface Category {
   companyId?: string; // Optional for backward compatibility
   name: string;
   count: number;
+  // Template configuration (optional)
+  defaultTemplate?: NewsletterTemplate;
+  defaultTone?: NewsletterTone;
+  defaultIncludeImages?: boolean;
+  defaultTargetAudience?: string;
 }
 
 export interface Recipient {
@@ -315,15 +320,36 @@ export enum NewsletterTone {
 }
 
 export interface GenerateOptions {
-  template: NewsletterTemplate;
+  template?: NewsletterTemplate; // Optional when htmlTemplate is provided
   description: string;
   tone?: NewsletterTone;
   includeImages?: boolean;
   targetAudience?: string;
+  htmlTemplate?: string; // User-uploaded HTML template (overrides template/tone)
+  customPromptAdditions?: string; // Additional AI instructions
 }
 
 export interface GenerateResponse {
   success: boolean;
   htmlContent?: string;
   error?: string;
+}
+
+// ============================================================================
+// NEWSLETTER TEMPLATE LIBRARY TYPES
+// ============================================================================
+
+export interface NewsletterTemplateConfig {
+  id: string;
+  companyId: string;
+  name: string; // e.g., "Company Announcements Template"
+  description?: string;
+  htmlTemplate: string; // User-uploaded HTML template content
+  includeImages: boolean;
+  targetAudience?: string;
+  customPromptAdditions?: string; // Advanced: custom AI instructions
+  categoryIds?: string[]; // Linked categories
+  isDefault?: boolean; // Default template for the company
+  createdAt: string;
+  updatedAt: string;
 }

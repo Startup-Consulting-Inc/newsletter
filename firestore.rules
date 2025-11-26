@@ -238,6 +238,34 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // TEMPLATE CONFIGS COLLECTION
+    // =========================================================================
+
+    match /templateConfigs/{templateId} {
+      // Site Admins can read all templates
+      // Company/Newsletter Admins can read templates for their company
+      allow read: if isSiteAdmin() || belongsToCompany(resource.data.companyId);
+
+      // Site Admins can create any template
+      // Company/Newsletter Admins can create templates for their company
+      allow create: if isSiteAdmin() ||
+                      (isAuthenticated() &&
+                       request.resource.data.companyId == getUserData().companyId);
+
+      // Site Admins can update any template
+      // Company/Newsletter Admins can update templates for their company
+      allow update: if isSiteAdmin() ||
+                      (isAuthenticated() &&
+                       resource.data.companyId == getUserData().companyId);
+
+      // Site Admins can delete any template
+      // Company/Newsletter Admins can delete templates for their company
+      allow delete: if isSiteAdmin() ||
+                      (isAuthenticated() &&
+                       resource.data.companyId == getUserData().companyId);
+    }
+
+    // =========================================================================
     // DEFAULT DENY
     // =========================================================================
 

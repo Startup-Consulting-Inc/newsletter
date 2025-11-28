@@ -123,8 +123,12 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
       return;
     }
 
-    if (!currentUser.companyId) {
-      alert('❌ Error: User company information is missing. Please refresh the page and try again.');
+    // Determine companyId: use existing newsletter's companyId, user's companyId, or category's companyId
+    const selectedCategory = categories.find(c => c.id === categoryId);
+    const effectiveCompanyId = initialData?.companyId || currentUser.companyId || selectedCategory?.companyId;
+
+    if (!effectiveCompanyId) {
+      alert('❌ Error: Unable to determine company for this newsletter. Please ensure you are assigned to a company or select a valid category.');
       return;
     }
 
@@ -133,7 +137,7 @@ export const NewsletterEditor: React.FC<EditorProps> = ({ newsletter: initialDat
       // First save/update the newsletter in Firestore
       const newNewsletter: Newsletter = {
         id: initialData?.id || `n${Date.now()}`,
-        companyId: initialData?.companyId || currentUser.companyId, // Use existing or current user's companyId
+        companyId: effectiveCompanyId,
         subject,
         htmlContent,
         categoryId,

@@ -33,7 +33,20 @@ export const GenerateTab: React.FC<GenerateTabProps> = ({
   // Load template when category changes
   useEffect(() => {
     const loadTemplateFromCategory = async () => {
-      if (!categoryId || !currentUser.companyId) {
+      if (!categoryId) {
+        setLoadedTemplateName(null);
+        setLoadedTemplateConfig(null);
+        return;
+      }
+
+      // First, get the category itself to check for default template/tone settings
+      const selectedCategory = categories.find(c => c.id === categoryId);
+      
+      // Determine effective companyId: user's companyId or category's companyId (for Site Admins)
+      const effectiveCompanyId = currentUser.companyId || selectedCategory?.companyId;
+      
+      if (!effectiveCompanyId) {
+        // Can't load template without a company context
         setLoadedTemplateName(null);
         setLoadedTemplateConfig(null);
         return;
@@ -41,16 +54,39 @@ export const GenerateTab: React.FC<GenerateTabProps> = ({
 
       setIsLoadingTemplate(true);
       try {
-        const templateConfig = await api.getTemplateByCategory(categoryId, currentUser.companyId);
+        // Try to load linked template config
+        const templateConfig = await api.getTemplateByCategory(categoryId, effectiveCompanyId);
 
         if (templateConfig) {
-          // Auto-populate form fields from template
+          // Auto-populate form fields from template config
           setIncludeImages(templateConfig.includeImages);
           if (templateConfig.targetAudience) {
             setTargetAudience(templateConfig.targetAudience);
           }
           setLoadedTemplateName(templateConfig.name);
           setLoadedTemplateConfig(templateConfig);
+        } else if (selectedCategory) {
+          // No linked template config - use category's default settings if available
+          if (selectedCategory.defaultTemplate) {
+            setTemplate(selectedCategory.defaultTemplate);
+          }
+          if (selectedCategory.defaultTone) {
+            setTone(selectedCategory.defaultTone);
+          }
+          if (selectedCategory.defaultIncludeImages !== undefined) {
+            setIncludeImages(selectedCategory.defaultIncludeImages);
+          }
+          if (selectedCategory.defaultTargetAudience) {
+            setTargetAudience(selectedCategory.defaultTargetAudience);
+          }
+          
+          // Show indication that category defaults were loaded
+          if (selectedCategory.defaultTemplate || selectedCategory.defaultTone) {
+            setLoadedTemplateName(`${selectedCategory.name} (category defaults)`);
+          } else {
+            setLoadedTemplateName(null);
+          }
+          setLoadedTemplateConfig(null);
         } else {
           setLoadedTemplateName(null);
           setLoadedTemplateConfig(null);
@@ -65,7 +101,7 @@ export const GenerateTab: React.FC<GenerateTabProps> = ({
     };
 
     loadTemplateFromCategory();
-  }, [categoryId, currentUser.companyId]);
+  }, [categoryId, currentUser.companyId, categories]);
 
   // Sync with parent component's category
   useEffect(() => {

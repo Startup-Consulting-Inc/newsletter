@@ -228,7 +228,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
                     {trackingLogs.map((log) => (
                       <tr key={log.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-3 px-4 text-sm text-gray-900 font-medium">
-                          {log.recipientEmail}
+                          {log.recipientEmail || log.recipientId || 'Unknown'}
                         </td>
                         <td className="py-3 px-4">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${log.eventType === 'open'
@@ -239,7 +239,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-500">
-                          {new Date(log.timestamp).toLocaleString()}
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown'}
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-500 truncate max-w-xs">
                           {log.linkUrl && (
@@ -253,8 +253,11 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
                   </tbody>
                 </table>
               ) : (
-                <div className="text-center py-12 text-gray-500">
-                  No activity recorded yet.
+                <div className="text-center py-12">
+                  <p className="text-gray-500 mb-2">No activity recorded yet.</p>
+                  <p className="text-xs text-gray-400">
+                    Tracking data appears when recipients open emails or click links.
+                  </p>
                 </div>
               )}
             </div>

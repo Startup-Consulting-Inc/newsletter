@@ -266,6 +266,19 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // TRACKING COLLECTION
+    // =========================================================================
+
+    match /tracking/{trackingId} {
+      // Authenticated users can read all tracking events
+      // (Access control is handled at the newsletter level)
+      allow read: if isAuthenticated();
+
+      // Only Cloud Functions can write tracking events (deny client writes)
+      allow create, update, delete: if false;
+    }
+
+    // =========================================================================
     // DEFAULT DENY
     // =========================================================================
 

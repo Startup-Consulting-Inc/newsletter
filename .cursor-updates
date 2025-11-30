@@ -1,0 +1,59 @@
+# Cursor Updates Log
+
+## [2025-11-29] FIX: Fixed Activity Details showing no tracking logs
+
+### Changes Made:
+1. **Fixed Firestore query error handling** (`services/firestoreApi.ts`)
+   - Added fallback query when composite index is missing
+   - Query now handles missing `orderBy` index gracefully
+   - Added in-memory sorting as fallback
+   - Better error logging for debugging
+
+2. **Improved tracking record creation** (`functions/src/tracking.ts`)
+   - Now resolves and saves recipient email directly when creating tracking records
+   - Added logging to track when records are created
+   - Better error handling for recipient email resolution
+
+3. **Enhanced UI error handling** (`components/Analytics.tsx`)
+   - Better fallback display for missing recipient emails
+   - Improved empty state message
+   - More robust handling of missing timestamp data
+
+### Root Causes:
+- Firestore composite index for `tracking` collection might not be deployed
+- Query was failing silently when index was missing
+- Recipient emails weren't being saved in tracking records (only resolved later)
+
+### Next Steps:
+- Deploy Firestore indexes: `firebase deploy --only firestore:indexes`
+- Deploy updated functions: `firebase deploy --only functions`
+
+---
+
+## [2025-11-29] FIX: Fixed inaccurate open/click rate tracking
+
+### Changes Made:
+1. **Added bot detection to tracking functions** (`functions/src/tracking.ts`)
+   - Implemented `isLikelyBot()` function to detect email client scanners and bots
+   - Gmail, Outlook, Apple Mail, and security scanners often pre-fetch images which artificially inflates open rates
+   - Bot requests now return the tracking pixel but don't count toward stats
+
+2. **Fixed missing `uniqueOpened`/`uniqueClicked` initialization** (`functions/src/sendNewsletter.ts`)
+   - When newsletter is sent, stats now properly initialize `uniqueOpened: 0` and `uniqueClicked: 0`
+   - Updated type signature for `updateNewsletterStatus` function
+
+3. **Fixed seed data** (`services/seedData.ts`)
+   - Added `uniqueOpened` and `uniqueClicked` fields to seeded newsletter stats
+   - More realistic demo stats (285/450 = 63% open rate instead of using `opened` as fallback)
+
+4. **Created recalculation script** (`functions/scripts/recalculate-stats.ts`)
+   - Script to recalculate newsletter stats based on actual tracking data
+   - Run with: `cd functions && npm run recalculate-stats` or `cd functions && npx tsx scripts/recalculate-stats.ts`
+   - Fixes any existing newsletters with incorrect stats
+   - Added `tsx` to functions devDependencies
+
+### Root Causes:
+- 100% open rates were caused by email client image pre-fetching (Gmail Proxy, etc.)
+- Missing `uniqueOpened`/`uniqueClicked` fields caused fallback to `opened`/`clicked` values
+- Seed data didn't include unique stat fields
+

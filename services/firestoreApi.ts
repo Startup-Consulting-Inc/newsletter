@@ -589,30 +589,68 @@ class FirestoreApiService {
   async getNewsletterTrackingLogs(newsletterId: string): Promise<any[]> {
     if (!db) throw new Error('Firestore not initialized');
 
+    console.log('🔍 Fetching tracking logs for newsletter:', newsletterId);
+
     // 1. Fetch tracking logs
     const trackingRef = collection(db, 'tracking');
-    const q = query(trackingRef, where('newsletterId', '==', newsletterId), orderBy('timestamp', 'desc'));
-    const trackingSnapshot = await getDocs(q);
+    let trackingSnapshot;
+
+    try {
+      // Try query with orderBy (requires composite index)
+      const q = query(trackingRef, where('newsletterId', '==', newsletterId), orderBy('timestamp', 'desc'));
+      trackingSnapshot = await getDocs(q);
+      console.log('✅ Query with orderBy succeeded, docs found:', trackingSnapshot.size);
+    } catch (error: any) {
+      // If index doesn't exist, fall back to query without orderBy
+      console.warn('⚠️ Index missing for tracking query, using fallback (no ordering):', error.message);
+      const fallbackQuery = query(trackingRef, where('newsletterId', '==', newsletterId));
+      trackingSnapshot = await getDocs(fallbackQuery);
+      console.log('✅ Fallback query succeeded, docs found:', trackingSnapshot.size);
+
+      // Sort in memory
+      const docs = trackingSnapshot.docs.sort((a, b) => {
+        const aTime = a.data().timestamp?.toMillis?.() || 0;
+        const bTime = b.data().timestamp?.toMillis?.() || 0;
+        return bTime - aTime; // Descending order
+      });
+
+      // Create a new QuerySnapshot-like object
+      trackingSnapshot = {
+        empty: docs.length === 0,
+        size: docs.length,
+        docs: docs,
+      } as any;
+    }
 
     if (trackingSnapshot.empty) {
+      console.warn('⚠️ No tracking logs found for newsletter:', newsletterId);
       return [];
     }
 
+    console.log('📊 Found', trackingSnapshot.size, 'tracking events');
+
     // 2. Fetch newsletter to get recipient groups
     const newsletter = await this.getNewsletter(newsletterId);
-    if (!newsletter) return [];
+    if (!newsletter) {
+      console.warn(`⚠️ Newsletter ${newsletterId} not found`);
+      return [];
+    }
 
     // 3. Fetch all recipients from groups to build an ID -> Email map
     const recipientMap = new Map<string, string>();
 
     for (const groupId of newsletter.recipientGroupIds) {
-      const recipientsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS, groupId, 'recipients');
-      const recipientsSnapshot = await getDocs(recipientsRef);
+      try {
+        const recipientsRef = collection(db, COLLECTIONS.RECIPIENT_GROUPS, groupId, 'recipients');
+        const recipientsSnapshot = await getDocs(recipientsRef);
 
-      recipientsSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        recipientMap.set(doc.id, data.email);
-      });
+        recipientsSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          recipientMap.set(doc.id, data.email);
+        });
+      } catch (error) {
+        console.warn(`⚠️ Failed to fetch recipients from group ${groupId}:`, error);
+      }
     }
 
     // 4. Join data
@@ -621,7 +659,7 @@ class FirestoreApiService {
       return {
         id: doc.id,
         ...data,
-        recipientEmail: recipientMap.get(data.recipientId) || 'Unknown Recipient',
+        recipientEmail: recipientMap.get(data.recipientId) || data.recipientEmail || 'Unknown Recipient',
         timestamp: this.timestampToISO(data.timestamp),
       };
     });

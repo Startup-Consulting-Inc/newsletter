@@ -8,7 +8,8 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "recalculate-stats": "tsx scripts/recalculate-stats.ts"
   },
   "engines": {
     "node": "20"
@@ -33,6 +34,7 @@
     "@types/node-fetch": "^2.6.11",
     "@types/nodemailer": "^6.4.14",
     "firebase-functions-test": "^3.1.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.3.0"
   },
   "private": true

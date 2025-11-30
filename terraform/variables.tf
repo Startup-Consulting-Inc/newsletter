@@ -2,7 +2,7 @@
 variable "project_id" {
   description = "GCP Project ID"
   type        = string
-  default     = "clearly-478614"
+  default     = "newsletter-b104f"
 }
 
 variable "region" {

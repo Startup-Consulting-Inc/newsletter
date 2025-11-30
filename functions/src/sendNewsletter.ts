@@ -59,7 +59,7 @@ async function fetchRecipients(groupIds: string[]): Promise<Recipient[]> {
 async function updateNewsletterStatus(
   newsletterId: string,
   status: NewsletterStatus,
-  stats?: { sent: number; opened: number; clicked: number; bounced: number }
+  stats?: { sent: number; opened: number; uniqueOpened: number; clicked: number; uniqueClicked: number; bounced: number }
 ): Promise<void> {
   const updates: any = {
     status,
@@ -180,7 +180,9 @@ export const sendNewsletterFunction = functions
       await updateNewsletterStatus(newsletterId, NewsletterStatus.SENT, {
         sent: sendResult.successCount,
         opened: 0, // Will be updated by tracking
+        uniqueOpened: 0, // Unique opens (one per recipient)
         clicked: 0, // Will be updated by tracking
+        uniqueClicked: 0, // Unique clicks (one per recipient)
         bounced: sendResult.failureCount,
       });
 

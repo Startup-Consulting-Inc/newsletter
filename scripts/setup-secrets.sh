@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-PROJECT_ID="clearly-478614"
+PROJECT_ID="newsletter-b104f"
 ENV_FILE=".env"
 
 echo -e "${BLUE}🔐 Setting up Google Secret Manager for InNews Newsletter Platform${NC}"

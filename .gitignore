@@ -84,3 +84,4 @@ id_dsa.pub
 # Documentation
 *.md
 !README.md
+functions/service-account.json

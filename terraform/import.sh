@@ -1,5 +1,5 @@
 #!/bin/bash
-PROJECT_ID="clearly-478614"
+PROJECT_ID="newsletter-b104f"
 REGION="us-west1"
 
 # Only import secrets (8 total - skipping VITE_FIREBASE_PROJECT_ID if it doesn't exist as a secret)

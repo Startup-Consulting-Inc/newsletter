@@ -3,13 +3,13 @@
 # Never commit terraform.tfvars to version control!
 
 # Project Configuration
-project_id       = "clearly-478614"
+project_id       = "newsletter-b104f"
 region           = "us-west1"
 functions_region = "us-central1"
 
 # Cloud Run Configuration
 service_name            = "newsletter"
-container_image         = "us-west1-docker.pkg.dev/clearly-478614/newsletter/newsletter:latest"
+container_image         = "us-west1-docker.pkg.dev/newsletter-b104f/newsletter/newsletter:latest"
 cloud_run_memory        = "512Mi"
 cloud_run_cpu           = "1"
 cloud_run_min_instances = 0

@@ -21,7 +21,7 @@ The platform uses a **hybrid deployment architecture**:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     GCP Project                         │
-│                   (clearly-478614)                      │
+│                   (newsletter-b104f)                      │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
 │  ┌──────────────┐      ┌─────────────────┐           │
@@ -87,7 +87,7 @@ The platform uses a **hybrid deployment architecture**:
    ```bash
    brew install --cask google-cloud-sdk  # macOS
    gcloud auth application-default login
-   gcloud config set project clearly-478614
+   gcloud config set project newsletter-b104f
    ```
 
 3. **Firebase CLI**: For deploying Firebase resources
@@ -116,8 +116,8 @@ Edit `terraform.tfvars` with your actual secret values:
 ```hcl
 # Get Firebase values from: Firebase Console > Project Settings > General
 vite_firebase_api_key              = "AIzaSy..."
-vite_firebase_auth_domain          = "clearly-478614.firebaseapp.com"
-vite_firebase_storage_bucket       = "clearly-478614.appspot.com"
+vite_firebase_auth_domain          = "newsletter-b104f.firebaseapp.com"
+vite_firebase_storage_bucket       = "newsletter-b104f.appspot.com"
 vite_firebase_messaging_sender_id  = "123456789"
 vite_firebase_app_id               = "1:123456789:web:abc123"
 
@@ -168,7 +168,7 @@ After Terraform completes, deploy the container:
 ```bash
 # From project root directory
 gcloud builds submit --config=cloudbuild.yaml \
-  --service-account=projects/clearly-478614/serviceAccounts/newsletter-cloud-build@clearly-478614.iam.gserviceaccount.com
+  --service-account=projects/newsletter-b104f/serviceAccounts/newsletter-cloud-build@newsletter-b104f.iam.gserviceaccount.com
 ```
 
 ### 6. Deploy Firebase Resources
@@ -250,8 +250,8 @@ To use GCS for remote state storage:
 ### 1. Create GCS Bucket
 
 ```bash
-gsutil mb gs://clearly-478614-terraform-state
-gsutil versioning set on gs://clearly-478614-terraform-state
+gsutil mb gs://newsletter-b104f-terraform-state
+gsutil versioning set on gs://newsletter-b104f-terraform-state
 ```
 
 ### 2. Enable Remote Backend
@@ -261,7 +261,7 @@ Edit `backend.tf` and uncomment the backend block:
 ```hcl
 terraform {
   backend "gcs" {
-    bucket  = "clearly-478614-terraform-state"
+    bucket  = "newsletter-b104f-terraform-state"
     prefix  = "newsletter/state"
   }
 }
@@ -343,7 +343,7 @@ gcloud services enable cloudbuild.googleapis.com
 
 ```bash
 # Verify your account has required roles
-gcloud projects get-iam-policy clearly-478614 \
+gcloud projects get-iam-policy newsletter-b104f \
   --flatten="bindings[].members" \
   --filter="bindings.members:user:YOUR_EMAIL"
 ```
@@ -368,9 +368,9 @@ terraform apply -target=google_secret_manager_secret.vite_firebase_api_key
 ```bash
 # Force new revision
 gcloud run deploy newsletter \
-  --image=us-west1-docker.pkg.dev/clearly-478614/newsletter/newsletter:latest \
+  --image=us-west1-docker.pkg.dev/newsletter-b104f/newsletter/newsletter:latest \
   --region=us-west1 \
-  --service-account=newsletter-cloud-run@clearly-478614.iam.gserviceaccount.com
+  --service-account=newsletter-cloud-run@newsletter-b104f.iam.gserviceaccount.com
 ```
 
 ## Out of Scope (Managed Separately)

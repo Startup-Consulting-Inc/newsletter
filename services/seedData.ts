@@ -248,7 +248,7 @@ async function seedNewsletters() {
       htmlContent: '<h1>Great Quarter!</h1><p>Thanks everyone for an amazing Q3. Here are the highlights...</p>',
       sentAt: new Date('2023-10-15T10:00:00Z'),
       updatedAt: new Date('2023-10-15T09:30:00Z'),
-      stats: { sent: 450, opened: 380, clicked: 150, bounced: 2 },
+      stats: { sent: 450, opened: 380, uniqueOpened: 285, clicked: 150, uniqueClicked: 95, bounced: 2 },
     },
     {
       id: 'newsletter_benefits',
@@ -259,7 +259,7 @@ async function seedNewsletters() {
       recipientGroupIds: ['group_all'],
       htmlContent: '<h1>Health Benefits 2024</h1><p>Review the attached docs for our enhanced health benefits package...</p><img src="https://via.placeholder.com/150" alt="placeholder" />',
       updatedAt: new Date('2023-10-26T14:20:00Z'),
-      stats: { sent: 0, opened: 0, clicked: 0, bounced: 0 },
+      stats: { sent: 0, opened: 0, uniqueOpened: 0, clicked: 0, uniqueClicked: 0, bounced: 0 },
     },
     {
       id: 'newsletter_demo',
@@ -271,7 +271,7 @@ async function seedNewsletters() {
       htmlContent: '<h1>Demo Day</h1><p>Join us this Friday for our monthly engineering demo day! See the latest projects from our teams.</p>',
       scheduledAt: new Date('2023-11-01T16:00:00Z'),
       updatedAt: new Date('2023-10-27T11:00:00Z'),
-      stats: { sent: 0, opened: 0, clicked: 0, bounced: 0 },
+      stats: { sent: 0, opened: 0, uniqueOpened: 0, clicked: 0, uniqueClicked: 0, bounced: 0 },
     },
   ];
 

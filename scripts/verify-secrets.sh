@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-PROJECT_ID="clearly-478614"
+PROJECT_ID="newsletter-b104f"
 
 echo -e "${BLUE}🔍 Verifying Google Secret Manager configuration${NC}"
 echo ""

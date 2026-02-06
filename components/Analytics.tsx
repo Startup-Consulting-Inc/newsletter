@@ -104,8 +104,9 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
         color: COLORS[status as keyof typeof COLORS] || '#6b7280',
       }));
 
-    // Top performers
+    // Recent newsletters (sorted by date, most recent first)
     const topPerformers = sentNewsletters
+      .filter(n => n.sentAt)
       .map(n => {
         const sent = n.stats?.sent || 0;
         const uniqueOpened = n.stats?.uniqueOpened || n.stats?.opened || 0;
@@ -115,11 +116,12 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
           id: n.id,
           subject: n.subject,
           sent,
+          sentAt: n.sentAt!,
           openRate: sent > 0 ? (uniqueOpened / sent) * 100 : 0,
           clickRate: sent > 0 ? (uniqueClicked / sent) * 100 : 0,
         };
       })
-      .sort((a, b) => b.openRate - a.openRate)
+      .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())
       .slice(0, 5);
 
     // Trends data (last 7 sent newsletters)
@@ -231,11 +233,16 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
                           {log.recipientEmail || log.recipientId || 'Unknown'}
                         </td>
                         <td className="py-3 px-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${log.eventType === 'open'
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-green-100 text-green-800'
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            log.possibleProxy
+                              ? 'bg-gray-100 text-gray-500'
+                              : log.eventType === 'open'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-green-100 text-green-800'
                             }`}>
-                            {log.eventType === 'open' ? 'Opened' : 'Clicked'}
+                            {log.possibleProxy
+                              ? 'Proxy'
+                              : log.eventType === 'open' ? 'Opened' : 'Clicked'}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-500">
@@ -368,9 +375,9 @@ export const Analytics: React.FC<AnalyticsProps> = ({ newsletters }) => {
         </div>
       </div>
 
-      {/* Top Performing Newsletters */}
+      {/* Recent Newsletters */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Newsletters</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Newsletters</h2>
         {stats.topPerformers.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full">

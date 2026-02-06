@@ -26,7 +26,10 @@ import {
   AlertCircle,
   FileText
 } from 'lucide-react';
-import { logUserLogin, logUserLogout } from './services/auditService';
+import { logUserLogin, logUserLogout, logUserSessionExpired } from './services/auditService';
+import { SessionTimeoutDialog } from './components/SessionTimeoutDialog';
+import { useSessionTimeout } from './hooks/useSessionTimeout';
+
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -40,6 +43,14 @@ export default function App() {
   const [showContact, setShowContact] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
+
+  const { showWarning, remainingTime, extendSession } = useSessionTimeout(
+    30 * 60 * 1000,  // 30 minutes
+    2 * 60 * 1000,   // 2 minute warning
+    () => handleSignOut('timeout')
+  );
+
 
   // Dashboard Data
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
@@ -101,6 +112,7 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        setTimeoutMessage(null);
         try {
           // Sync with Firestore - pass Firebase UID as document ID
           const appUser = await api.syncFirebaseUser(
@@ -219,7 +231,7 @@ export default function App() {
           'Please contact your Site Administrator to assign you to a company.\n\n' +
           'You will be signed out for security reasons.'
         );
-        handleSignOut();
+        handleSignOut('manual');
       } else {
         console.log('✅ User validation passed:', {
           userId: user.id,
@@ -231,25 +243,40 @@ export default function App() {
     }
   }, [user]);
 
-  const handleSignOut = async () => {
+  const handleSignOut = async (reason?: 'manual' | 'timeout') => {
     if (auth && user) {
-      // Log user logout with session duration
       const sessionDuration = sessionStartTime
         ? Math.round((Date.now() - sessionStartTime) / 1000) // seconds
         : undefined;
 
-      await logUserLogout({
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        sessionDuration,
-        companyId: user.companyId,
-      });
+      // Log appropriate event
+      if (reason === 'timeout') {
+        await logUserSessionExpired({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          companyId: user.companyId,
+          sessionDuration,
+        });
+      } else {
+        await logUserLogout({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          sessionDuration,
+          companyId: user.companyId,
+        });
+      }
 
       await signOut(auth);
       setUser(null);
       setCompany(undefined);
       setSessionStartTime(null);
+
+      if (reason === 'timeout') {
+        setTimeoutMessage('Your session has expired due to inactivity. Please log in again.');
+        setShowLogin(true);
+      }
     }
   };
 
@@ -464,7 +491,19 @@ export default function App() {
       return <ContactUsPage onClose={() => setShowContact(false)} />;
     }
     if (showLogin) {
-      return <AuthPage />;
+      return (
+        <>
+          {timeoutMessage && (
+            <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4">
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded shadow-lg flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                <span>{timeoutMessage}</span>
+              </div>
+            </div>
+          )}
+          <AuthPage />
+        </>
+      );
     }
     return (
       <LandingPage
@@ -967,13 +1006,19 @@ export default function App() {
   return (
     <Layout
       currentUser={user}
-      onLogout={handleSignOut}
+      onLogout={() => handleSignOut('manual')}
       activeTab={activeTab}
       onNavigate={setActiveTab}
       onOpenSettings={() => setActiveTab('profile')}
       onSupport={() => setShowContact(true)}
     >
       {renderContent()}
+      <SessionTimeoutDialog
+        isOpen={showWarning}
+        remainingTime={remainingTime}
+        onExtendSession={extendSession}
+        onLogout={() => handleSignOut('manual')}
+      />
     </Layout>
   );
 }

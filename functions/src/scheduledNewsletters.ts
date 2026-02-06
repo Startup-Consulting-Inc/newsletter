@@ -108,9 +108,11 @@ export const scheduledNewslettersFunction = functions
             continue;
           }
 
-          // Update status to "Sending"
+          // Update status to "Sending" and set sentAt now (not after send completes)
+          // so the tracking proxy-detection timing heuristic has an anchor point.
           await doc.ref.update({
             status: NewsletterStatus.SENDING,
+            sentAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
@@ -138,10 +140,9 @@ export const scheduledNewslettersFunction = functions
           // Calculate duration
           const duration = Math.round((Date.now() - startTime) / 1000);
 
-          // Update to "Sent" with stats
+          // Update to "Sent" with stats (sentAt already set during SENDING)
           await doc.ref.update({
             status: NewsletterStatus.SENT,
-            sentAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             stats: {
               sent: sendResult.successCount,

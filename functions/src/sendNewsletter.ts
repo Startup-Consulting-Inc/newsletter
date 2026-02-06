@@ -66,7 +66,9 @@ async function updateNewsletterStatus(
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 
-  if (status === NewsletterStatus.SENT) {
+  // Set sentAt when sending begins (not when it completes) so the tracking
+  // proxy-detection timing heuristic has an anchor point during the send window.
+  if (status === NewsletterStatus.SENDING) {
     updates.sentAt = admin.firestore.FieldValue.serverTimestamp();
   }
 

@@ -1,10 +1,10 @@
 import * as functions from 'firebase-functions';
-// import * as admin from 'firebase-admin';
+import * as admin from 'firebase-admin';
 import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
 import { logEmailBounced } from './auditLogger';
 
-// const db = admin.firestore();
+const db = admin.firestore();
 
 // Configuration
 const GMAIL_USER = process.env.GMAIL_USER || '';
@@ -127,6 +127,64 @@ function extractErrorMessage(bodyText: string): string {
 }
 
 /**
+ * Clean up tracking records for a bounced email.
+ * Deletes tracking events and recalculates newsletter stats.
+ */
+async function cleanupTrackingForBounce(newsletterId: string, bouncedEmail: string): Promise<void> {
+    try {
+        // Find all tracking records for this bounced recipient
+        const trackingRef = db.collection('tracking');
+        const snapshot = await trackingRef
+            .where('newsletterId', '==', newsletterId)
+            .where('recipientEmail', '==', bouncedEmail)
+            .get();
+
+        if (snapshot.empty) {
+            console.log(`ℹ️ No tracking records found for bounced email ${bouncedEmail} in newsletter ${newsletterId}`);
+            return;
+        }
+
+        console.log(`🧹 Cleaning up ${snapshot.size} tracking records for bounced email ${bouncedEmail}`);
+
+        // Delete tracking records in batches
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+
+        // Recalculate stats from remaining non-proxy tracking records
+        const remainingOpenSnapshot = await trackingRef
+            .where('newsletterId', '==', newsletterId)
+            .where('eventType', '==', 'open')
+            .where('possibleProxy', '==', false)
+            .get();
+
+        const remainingClickSnapshot = await trackingRef
+            .where('newsletterId', '==', newsletterId)
+            .where('eventType', '==', 'click')
+            .where('possibleProxy', '==', false)
+            .get();
+
+        // Count unique recipients
+        const uniqueOpenRecipients = new Set(remainingOpenSnapshot.docs.map(d => d.data().recipientId));
+        const uniqueClickRecipients = new Set(remainingClickSnapshot.docs.map(d => d.data().recipientId));
+
+        // Update newsletter stats
+        await db.collection('newsletters').doc(newsletterId).update({
+            'stats.opened': remainingOpenSnapshot.size,
+            'stats.uniqueOpened': uniqueOpenRecipients.size,
+            'stats.clicked': remainingClickSnapshot.size,
+            'stats.uniqueClicked': uniqueClickRecipients.size,
+        });
+
+        console.log(`✅ Tracking cleanup complete for ${bouncedEmail}: removed ${snapshot.size} records, recalculated stats`);
+    } catch (error) {
+        console.error(`⚠️ Failed to clean up tracking for bounced email ${bouncedEmail}:`, error);
+    }
+}
+
+/**
  * Main logic to check and process bounce emails
  */
 export async function checkBounces(testMode: boolean = false) {
@@ -225,6 +283,11 @@ export async function checkBounces(testMode: boolean = false) {
                         recipientEmail: failedEmail,
                         errorMessage,
                     });
+
+                    // Clean up any false tracking records for this bounced recipient
+                    if (newsletterId && newsletterId !== 'unknown') {
+                        await cleanupTrackingForBounce(newsletterId, failedEmail);
+                    }
 
                     // Mark as seen/processed (skip in test mode to allow re-testing)
                     if (!testMode) {

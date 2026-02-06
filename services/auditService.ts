@@ -157,6 +157,28 @@ export async function logUserLogout(params: {
   });
 }
 
+export async function logUserSessionExpired(params: {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  companyId?: string;
+  sessionDuration?: number;
+}) {
+  await logAuditEvent({
+    action: AuditAction.USER_SESSION_EXPIRED,
+    category: AuditCategory.AUTHENTICATION,
+    severity: 'WARNING',
+    userId: params.userId,
+    userName: params.userName,
+    userEmail: params.userEmail,
+    companyId: params.companyId,
+    details: {
+      sessionDuration: params.sessionDuration,
+      reason: 'Inactivity timeout (30 minutes)',
+    },
+  });
+}
+
 // ============================================================================
 // NEWSLETTER LOGGING
 // ============================================================================

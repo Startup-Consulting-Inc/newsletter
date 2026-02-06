@@ -96,6 +96,65 @@ function isLikelyBot(userAgent: string): boolean {
 }
 
 /**
+ * Known email proxy IP prefixes (e.g., Gmail Image Proxy, Google infrastructure)
+ * These proxies pre-fetch images immediately after delivery, inflating open rates.
+ */
+const KNOWN_PROXY_IP_PREFIXES = [
+  '66.249.', '66.102.', '72.14.',    // Google
+  '209.85.', '108.177.', '172.217.', // Google
+  '74.125.',                          // Google
+];
+
+function isKnownProxyIP(ip: string): boolean {
+  if (!ip) return false;
+  return KNOWN_PROXY_IP_PREFIXES.some(prefix => ip.startsWith(prefix));
+}
+
+/**
+ * Check if an open/click event is likely from an email proxy pre-fetch.
+ * Returns true if the event happened within PROXY_THRESHOLD_SECONDS of the newsletter being sent
+ * OR if the IP matches a known email proxy range.
+ */
+const PROXY_THRESHOLD_SECONDS = 60;
+
+function isPossibleProxyRequest(ip: string, sentAt: Date | null): boolean {
+  if (isKnownProxyIP(ip)) return true;
+  // If sentAt is null, newsletter is still in SENDING state — treat as proxy
+  if (!sentAt) return true;
+  const timeSinceSentSeconds = (Date.now() - sentAt.getTime()) / 1000;
+  return timeSinceSentSeconds < PROXY_THRESHOLD_SECONDS;
+}
+
+/**
+ * Detect email client bulk prefetching across multiple accounts.
+ * If the same IP has already triggered a tracking event for a DIFFERENT recipient
+ * of the same newsletter within a short window, it's likely an email client
+ * loading all images across all managed accounts at once.
+ */
+const BULK_OPEN_WINDOW_SECONDS = 5;
+
+async function isBulkClientOpen(
+  newsletterId: string,
+  recipientId: string,
+  ip: string,
+  eventType: 'open' | 'click'
+): Promise<boolean> {
+  if (!ip) return false;
+
+  const windowStart = new Date(Date.now() - BULK_OPEN_WINDOW_SECONDS * 1000);
+
+  const recentFromSameIP = await db.collection('tracking')
+    .where('newsletterId', '==', newsletterId)
+    .where('ipAddress', '==', ip)
+    .where('eventType', '==', eventType)
+    .where('timestamp', '>=', admin.firestore.Timestamp.fromDate(windowStart))
+    .limit(1)
+    .get();
+
+  return !recentFromSameIP.empty;
+}
+
+/**
  * Track Email Opens
  * GET /trackOpen?nid={newsletterId}&rid={recipientId}
  */
@@ -126,14 +185,16 @@ export const trackOpenFunction = functions
         return;
       }
 
-      // Try to resolve recipient email from newsletter's recipient groups
+      // Fetch newsletter doc to resolve recipient email and get sentAt for proxy detection
       let recipientEmail = '';
+      let sentAt: Date | null = null;
       try {
         const newsletterDoc = await db.collection('newsletters').doc(String(newsletterId)).get();
         if (newsletterDoc.exists) {
           const newsletter = newsletterDoc.data();
+          sentAt = newsletter?.sentAt?.toDate?.() || null;
           const recipientGroupIds = newsletter?.recipientGroupIds || [];
-          
+
           // Search for recipient in all groups
           for (const groupId of recipientGroupIds) {
             const recipientDoc = await db
@@ -142,7 +203,7 @@ export const trackOpenFunction = functions
               .collection('recipients')
               .doc(String(recipientId))
               .get();
-            
+
             if (recipientDoc.exists) {
               recipientEmail = recipientDoc.data()?.email || '';
               break;
@@ -151,6 +212,21 @@ export const trackOpenFunction = functions
         }
       } catch (error) {
         console.warn(`⚠️ Failed to resolve recipient email for ${recipientId}:`, error);
+      }
+
+      // Detect email proxy pre-fetching (e.g., Gmail Image Proxy)
+      let possibleProxy = isPossibleProxyRequest(ip, sentAt);
+      if (possibleProxy) {
+        console.log(`📧 Possible proxy open detected: newsletter=${newsletterId}, recipient=${recipientId}, ip=${ip}, sentAt=${sentAt?.toISOString()}`);
+      }
+
+      // Detect email client bulk prefetching (same IP, multiple recipients, short window)
+      if (!possibleProxy) {
+        const bulkOpen = await isBulkClientOpen(String(newsletterId), String(recipientId), ip, 'open');
+        if (bulkOpen) {
+          possibleProxy = true;
+          console.log(`📧 Bulk client open detected: same IP ${ip} opened multiple recipients within ${BULK_OPEN_WINDOW_SECONDS}s`);
+        }
       }
 
       // Check if already tracked
@@ -164,7 +240,7 @@ export const trackOpenFunction = functions
       const snapshot = await q.get();
       const isUnique = snapshot.empty;
 
-      // Log tracking event
+      // Log tracking event (always store for audit, but flag proxy events)
       const trackingDoc = await trackingRef.add({
         newsletterId: String(newsletterId),
         recipientId: String(recipientId),
@@ -174,23 +250,26 @@ export const trackOpenFunction = functions
         userAgent,
         ipAddress: ip,
         isBot: false,
+        possibleProxy,
       });
 
-      console.log(`📊 Created tracking record: id=${trackingDoc.id}, newsletter=${newsletterId}, recipient=${recipientId}, email=${recipientEmail || 'unknown'}`);
+      console.log(`📊 Created tracking record: id=${trackingDoc.id}, newsletter=${newsletterId}, recipient=${recipientId}, email=${recipientEmail || 'unknown'}, possibleProxy=${possibleProxy}`);
 
-      // Increment newsletter open count
-      const updateData: Record<string, admin.firestore.FieldValue> = {
-        'stats.opened': admin.firestore.FieldValue.increment(1),
-      };
+      // Only increment stats for non-proxy opens
+      if (!possibleProxy) {
+        const updateData: Record<string, admin.firestore.FieldValue> = {
+          'stats.opened': admin.firestore.FieldValue.increment(1),
+        };
 
-      if (isUnique) {
-        updateData['stats.uniqueOpened'] = admin.firestore.FieldValue.increment(1);
+        if (isUnique) {
+          updateData['stats.uniqueOpened'] = admin.firestore.FieldValue.increment(1);
+        }
+
+        await db
+          .collection('newsletters')
+          .doc(String(newsletterId))
+          .update(updateData);
       }
-
-      await db
-        .collection('newsletters')
-        .doc(String(newsletterId))
-        .update(updateData);
 
       // Log audit event with metadata
       await logEmailOpened({
@@ -201,7 +280,7 @@ export const trackOpenFunction = functions
         ip,
       });
 
-      console.log(`📊 Tracked open: newsletter=${newsletterId}, recipient=${recipientId}, unique=${isUnique}`);
+      console.log(`📊 Tracked open: newsletter=${newsletterId}, recipient=${recipientId}, unique=${isUnique}, possibleProxy=${possibleProxy}`);
 
       // Return tracking pixel
       res.set('Content-Type', 'image/gif');
@@ -247,14 +326,16 @@ export const trackClickFunction = functions
         return;
       }
 
-      // Try to resolve recipient email from newsletter's recipient groups
+      // Fetch newsletter doc to resolve recipient email and get sentAt for proxy detection
       let recipientEmail = '';
+      let sentAt: Date | null = null;
       try {
         const newsletterDoc = await db.collection('newsletters').doc(String(newsletterId)).get();
         if (newsletterDoc.exists) {
           const newsletter = newsletterDoc.data();
+          sentAt = newsletter?.sentAt?.toDate?.() || null;
           const recipientGroupIds = newsletter?.recipientGroupIds || [];
-          
+
           // Search for recipient in all groups
           for (const groupId of recipientGroupIds) {
             const recipientDoc = await db
@@ -263,7 +344,7 @@ export const trackClickFunction = functions
               .collection('recipients')
               .doc(String(recipientId))
               .get();
-            
+
             if (recipientDoc.exists) {
               recipientEmail = recipientDoc.data()?.email || '';
               break;
@@ -272,6 +353,21 @@ export const trackClickFunction = functions
         }
       } catch (error) {
         console.warn(`⚠️ Failed to resolve recipient email for ${recipientId}:`, error);
+      }
+
+      // Detect email proxy pre-fetching
+      let possibleProxy = isPossibleProxyRequest(ip, sentAt);
+      if (possibleProxy) {
+        console.log(`📧 Possible proxy click detected: newsletter=${newsletterId}, recipient=${recipientId}, ip=${ip}, sentAt=${sentAt?.toISOString()}`);
+      }
+
+      // Detect email client bulk prefetching (same IP, multiple recipients, short window)
+      if (!possibleProxy) {
+        const bulkClick = await isBulkClientOpen(String(newsletterId), String(recipientId), ip, 'click');
+        if (bulkClick) {
+          possibleProxy = true;
+          console.log(`📧 Bulk client click detected: same IP ${ip} clicked multiple recipients within ${BULK_OPEN_WINDOW_SECONDS}s`);
+        }
       }
 
       // Check if already tracked
@@ -285,7 +381,7 @@ export const trackClickFunction = functions
       const snapshot = await q.get();
       const isUnique = snapshot.empty;
 
-      // Log tracking event
+      // Log tracking event (always store for audit, but flag proxy events)
       const trackingDoc = await trackingRef.add({
         newsletterId: String(newsletterId),
         recipientId: String(recipientId),
@@ -296,23 +392,26 @@ export const trackClickFunction = functions
         userAgent,
         ipAddress: ip,
         isBot: false,
+        possibleProxy,
       });
 
-      console.log(`🖱️ Created tracking record: id=${trackingDoc.id}, newsletter=${newsletterId}, recipient=${recipientId}, email=${recipientEmail || 'unknown'}`);
+      console.log(`🖱️ Created tracking record: id=${trackingDoc.id}, newsletter=${newsletterId}, recipient=${recipientId}, email=${recipientEmail || 'unknown'}, possibleProxy=${possibleProxy}`);
 
-      // Increment newsletter click count
-      const updateData: Record<string, admin.firestore.FieldValue> = {
-        'stats.clicked': admin.firestore.FieldValue.increment(1),
-      };
+      // Only increment stats for non-proxy clicks
+      if (!possibleProxy) {
+        const updateData: Record<string, admin.firestore.FieldValue> = {
+          'stats.clicked': admin.firestore.FieldValue.increment(1),
+        };
 
-      if (isUnique) {
-        updateData['stats.uniqueClicked'] = admin.firestore.FieldValue.increment(1);
+        if (isUnique) {
+          updateData['stats.uniqueClicked'] = admin.firestore.FieldValue.increment(1);
+        }
+
+        await db
+          .collection('newsletters')
+          .doc(String(newsletterId))
+          .update(updateData);
       }
-
-      await db
-        .collection('newsletters')
-        .doc(String(newsletterId))
-        .update(updateData);
 
       // Log audit event with metadata
       await logEmailClicked({
@@ -324,7 +423,7 @@ export const trackClickFunction = functions
         ip,
       });
 
-      console.log(`🖱️  Tracked click: newsletter=${newsletterId}, recipient=${recipientId}, url=${originalUrl}, unique=${isUnique}`);
+      console.log(`🖱️  Tracked click: newsletter=${newsletterId}, recipient=${recipientId}, url=${originalUrl}, unique=${isUnique}, possibleProxy=${possibleProxy}`);
 
       // Redirect to original URL
       res.redirect(302, decodedUrl);
